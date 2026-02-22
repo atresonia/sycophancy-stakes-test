@@ -31,7 +31,7 @@ from typing import Any, Dict, Optional, Set, Callable, List
 from tqdm import tqdm
 import pandas as pd
 
-from llm_inference import LLMClient, InferenceTask
+from inference.llm_inference import LLMClient, InferenceTask
 
 
 class RunMode(Enum):
@@ -187,8 +187,6 @@ async def run_multi_task_inference(
         candidates = [rid for rid in df.index if (rid not in latest) or (not is_success(latest[rid]))]
     elif mode == RunMode.SKIP_DONE:
         candidates = [rid for rid in df.index if rid not in latest]
-    else:
-        raise ValueError(f"Invalid mode={mode}")
 
     if force_ids:
         forced = [rid for rid in force_ids if rid in df.index]
