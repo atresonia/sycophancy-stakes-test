@@ -5,6 +5,8 @@ Mainly meant to be used on AITA YTA dataset.
 
 Usage:
 - Overwrite: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl
+- With Gemini (structured output): python scripts/generate_stakes_variants.py --num_ex 10 --model gemini-2.5-flash --provider gemini --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-gemini.jsonl
+- With Anthropic: python scripts/generate_stakes_variants.py --num_ex 10 --model claude-sonnet-4-20250514 --provider anthropic --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-claude.jsonl
 - Redo failed: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl --mode redo_failed
 - Skip done: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl --mode skip_done
 """
@@ -27,14 +29,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_ex", type=int, default=10)
     parser.add_argument("--model", type=str, default="gpt-5.2")
-    parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic"], default="openai_compat")
+    parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic", "gemini"], default="openai_compat")
     parser.add_argument("--base_url", type=str, default=None)
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--in_csv", type=str, default="data/AITA-YTA.csv")
     parser.add_argument("--out_json", type=str, default="data/aita-yta-stakes-gen-openai.jsonl")
     parser.add_argument("--mode", type=lambda s: RunMode[s], choices=list(RunMode), default=RunMode.OVERWRITE)
     parser.add_argument("--force_ids", type=str, default=None)
-    parser.add_argument("--no_cache", action="store_true", help="Disable LLM response caching")
+    parser.add_argument("--use_cache", action="store_true", help="Use LLM response caching")
     args = parser.parse_args()
     
     force_ids = [int(fid) for fid in args.force_ids.split(",")] if args.force_ids else None
@@ -44,10 +46,11 @@ def main():
     if args.api_key is None:
         if args.provider == "openai_compat":
             args.api_key = os.getenv("OPENAI_API_KEY")
-        else:
+        elif args.provider == "anthropic":
             args.api_key = os.getenv("ANTHROPIC_API_KEY")
+        else:
+            args.api_key = os.getenv("GEMINI_API_KEY")
 
-    print(f"API key: {args.api_key}")
     print(f"Generating stakes variants for {args.in_csv} with {args.num_ex} rows using {args.model} in {args.mode.name} mode...")
 
     df = pd.read_csv(args.in_csv)
@@ -60,8 +63,9 @@ def main():
         model=args.model,
         base_url=args.base_url,
         api_key=args.api_key,
-        cache_dir=None if args.no_cache else ".llm_cache",
-    ))
+    ),
+    cache_dir=".llm_cache" if args.use_cache else None,
+    )
     asyncio.run(run_batch_inference(
         df=df,
         client=client,

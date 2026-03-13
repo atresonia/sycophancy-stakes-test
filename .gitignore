@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables / secrets
+.env
+.env.*
+*.key
+
+# LLM cache
+.llm_cache/
+
+# Data files (large or sensitive)
+data/*.csv
+data/*.tsv
+data/*.zip
+data/*.jsonl
+
+# Outputs
+verify_out/
+
+# Plots (generated)
+plots/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

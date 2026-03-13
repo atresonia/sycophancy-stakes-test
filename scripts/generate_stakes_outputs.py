@@ -8,6 +8,8 @@ Usage:
 - Overwrite: python scripts/generate_stakes_outputs.py --in_json data/aita-yta-stakes-gen-claude.jsonl --out_json data/aita-yta-variants-gen-openai.jsonl
 - Redo failed: python scripts/generate_stakes_outputs.py --in_json data/aita-yta-stakes-gen-claude.jsonl --out_json data/aita-yta-variants-gen-openai.jsonl --mode REDO_FAILED
 - Skip done: python scripts/generate_stakes_outputs.py --in_json data/aita-yta-stakes-gen-claude.jsonl --out_json data/aita-yta-variants-gen-openai.jsonl --mode SKIP_DONE
+- With Gemini: python scripts/generate_stakes_outputs.py --in_json data/aita-yta-stakes-gen-claude.jsonl --out_json data/aita-yta-variants-gen-gemini.jsonl --model gemini-2.5-flash --provider gemini
+- If Gemini truncates responses, try: --model gemini-2.0-flash (known issue with gemini-2.5-flash and max_output_tokens).
 """
 import argparse
 import asyncio
@@ -32,7 +34,8 @@ def make_low_variant_task(row: pd.Series) -> InferenceTask:
     return InferenceTask(
         user_prompt=prompt + "\nOutput only YTA or NTA with a brief 1-2 sentence explanation.",
         system_prompt=STAKES_OUTPUT_SYSTEM_PROMPT,
-        max_tokens=200,
+        max_tokens=512,
+        stop_sequences=["\n\n"],  # don't stop on single newline so the full reason completes (Gemini default stops at \n)
     )
 
 
@@ -48,7 +51,8 @@ def make_high_variant_task(row: pd.Series) -> InferenceTask:
     return InferenceTask(
         user_prompt=prompt + "\nOutput only YTA or NTA with a brief 1-2 sentence explanation.",
         system_prompt=STAKES_OUTPUT_SYSTEM_PROMPT,
-        max_tokens=200,
+        max_tokens=512,
+        stop_sequences=["\n\n"],  # don't stop on single newline so the full reason completes (Gemini default stops at \n)
     )
 
 
@@ -81,8 +85,6 @@ def load_stakes_variants(jsonl_path: Path) -> pd.DataFrame:
     keep_cols = ["prompt_row_id", "low_variant_prompt", "high_variant_prompt"]
     df = flat[[c for c in keep_cols if c in flat.columns]].copy()
     
-    print(f"Loaded columns: {list(df.columns)}")
-    print(df)
     
     # Set prompt_row_id as index for proper tracking
     if "prompt_row_id" in df.columns:
@@ -94,14 +96,14 @@ def main():
     parser = argparse.ArgumentParser(description="Generate YTA/NTA judgments for stakes variants")
     parser.add_argument("--num_ex", type=int, default=None, help="Max number of rows to process (default: all)")
     parser.add_argument("--model", type=str, default="gpt-5.2")
-    parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic"], default="openai_compat")
+    parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic", "gemini"], default="openai_compat")
     parser.add_argument("--base_url", type=str, default=None)
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--in_json", type=str, default="data/aita-yta-stakes-gen-claude.jsonl")
     parser.add_argument("--out_json", type=str, default="data/aita-yta-variants-gen-openai.jsonl")
     parser.add_argument("--mode", type=lambda s: RunMode[s], choices=list(RunMode), default=RunMode.OVERWRITE)
     parser.add_argument("--force_ids", type=str, default=None)
-    parser.add_argument("--no_cache", action="store_true", help="Disable LLM response caching")
+    parser.add_argument("--use_cache", action="store_true", help="Use LLM response caching")
     args = parser.parse_args()
 
     force_ids = [int(fid) for fid in args.force_ids.split(",")] if args.force_ids else None
@@ -110,8 +112,10 @@ def main():
     if args.api_key is None:
         if args.provider == "openai_compat":
             args.api_key = os.getenv("OPENAI_API_KEY")
-        else:
+        elif args.provider == "anthropic":
             args.api_key = os.getenv("ANTHROPIC_API_KEY")
+        else:
+            args.api_key = os.getenv("GEMINI_API_KEY")
 
     print(f"Generating stakes outputs for {args.in_json} using {args.model} in {args.mode.name} mode...")
 
@@ -122,7 +126,7 @@ def main():
     # Limit number of examples if specified
     n = args.num_ex if args.num_ex else len(df)
 
-    # Create client (disable cache if --no_cache flag is set)
+    # Create client (use cache if --use_cache flag is set)
     client = LLMClient(
         endpoint=EndpointConfig(
             provider=args.provider,
@@ -130,7 +134,7 @@ def main():
             base_url=args.base_url,
             api_key=args.api_key,
         ),
-        cache_dir=None if args.no_cache else ".llm_cache",
+        cache_dir=".llm_cache" if args.use_cache else None,
     )
 
     # Run multi-task inference (low and high variants per row)

@@ -22,13 +22,36 @@ conda activate sycophancy-stakes
 pip install -r requirements.txt
 # import local libraries
 pip install -e .
+
+# Install dev deps for tests (optional)
+pip install -e ".[dev]"
 ```
+
+### Running tests
+
+Run the test suite to verify code changes without calling real APIs:
+
+```bash
+# From repo root (recommended)
+./scripts/run_tests.sh
+
+# Or with pytest directly
+pip install -e ".[dev]"
+pytest tests/ -v
+
+# Run a single test file or test
+pytest tests/test_llm_inference.py -v
+pytest tests/test_llm_inference.py::TestInferenceTask::test_get_user_prompt_direct -v
+```
+
+Tests use mocks for LLM clients, so no API keys are required.
 
 ### Set up API keys
 
 ```bash
 export OPENAI_API_KEY="your-openai-key"
 export ANTHROPIC_API_KEY="your-anthropic-key"
+export GEMINI_API_KEY="your-gemini-api-key"
 ```
 
 ## Definitions
@@ -46,8 +69,29 @@ We have defined the range as 1-10.
 3. From our stakes-variants dataset, we run inference on the stakes variants. We used gpt-5.2 to generate the outputs and saved the dataset [here](data/aita-yta-variants-gen-openai.jsonl)
 4. From our stakes-output dataset, we run evaluation on the level of sycophancy from the generated outputs. We use llm-as-a-judge (gpt-5.2), but we will also add humans in the loop in this stage. We have an example generation [here](data/sycophancy-eval-gpt5.jsonl)
 
+## Verify pipeline with one example
+
+Before running on a full dataset, run the pipeline on a single example to confirm everything works:
+
+```bash
+# From repo root (requires API key in env). Uses data/sample_one_aita.csv and writes to verify_out/
+python scripts/verify_pipeline.py
+
+# With a specific provider/model
+python scripts/verify_pipeline.py --provider gemini --model gemini-2.0-flash
+
+# Only run step 1 (stakes variants), or steps 1 and 2
+python scripts/verify_pipeline.py --steps 1
+python scripts/verify_pipeline.py --steps 1,2
+
+# Custom work dir and no cache
+python scripts/verify_pipeline.py --work_dir ./my_verify --no_cache
+```
+
+Outputs go to `verify_out/` by default (or `--work_dir`). Each step is validated (one record, `status=ok`). If any step fails, the script exits with a non-zero code.
+
 ## Scripts
-1. **Generate Stakes Variants Dataset**: ex: `python scripts/generate_stakes_variants.py --num_ex 7 --in_json data/AITA-YTA.csv --out_json data/aita-yta-test-stakes-gen.jsonl`: takes data from original ELEPHANT AITA-YTA dataset and generates low and high stakes variants for both. I recommend using an Anthropic model for this step (we used claude-sonnet-4.5) because it has support for object mapping. If you use OpenAI/another model group, you will just need to validate the column names that get generated match the `StakesOutput` variable naming convention.
+1. **Generate Stakes Variants Dataset**: ex: `python scripts/generate_stakes_variants.py --num_ex 7 --in_csv data/AITA-YTA.csv --out_json data/aita-yta-test-stakes-gen.jsonl` (use `--num_ex 1` with `data/sample_one_aita.csv` for a quick single-example check): takes data from original ELEPHANT AITA-YTA dataset and generates low and high stakes variants. Use `--provider anthropic` or `--provider gemini` for native structured output (recommended; we used claude-sonnet-4.5). With `--provider openai_compat`, responses are validated and normalized to the `StakesOutput` schema when possible so column names stay consistent.
 2. **Generate Stakes Output Dataset**: ex: `python scripts/generate_stakes_outputs.py --in_json data/aita-yta-test-stakes-gen.jsonl --out_json data/aita-yta-test-stakes-output.jsonl --no_cache`. takes stakes-variant dataset generated in step 1 and runs inference on each (one low-variant and one high-variant). Output is stored in a jsonl file. You can disable cache if you want to regenerate the output.
 3. **Generate sycophancy eval**: ex: `python scripts/generate_syc_eval.py --in_json data/aita-yta-variants-gen-openai.jsonl --out_json data/aita-yta-openai-eval.jsonl`. Takes the stakes-output dataset generated in step 2 and evaluates (llm-as-a-judge) the level of sycophancy (0-100) in each output. Outputs to a jsonl file.
 4. **Plot sycophancy score**: ex: `python scripts/plot_sycophancy_scores.py --in_json data/aita-yta-openai-eval.jsonl --out_png plots/sycophancy_scores.png`. Meant to just be used for the sycophancy eval dataset from step 3. Saves the plot to a png file.
