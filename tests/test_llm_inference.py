@@ -144,7 +144,9 @@ class TestLLMClientOpenAI:
         parsed = StakesOutput.model_validate(sample_stakes_output_dict)
         with patch.object(client.client.chat.completions, "parse", new_callable=AsyncMock) as m:
             m.return_value = MagicMock(
-                parsed_output=parsed,
+                choices=[
+                    MagicMock(message=MagicMock(parsed=parsed, content=None)),
+                ],
                 model_dump=MagicMock(return_value={}),
             )
             task = InferenceTask(user_prompt="Gen", output_schema=StakesOutput)

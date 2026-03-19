@@ -94,11 +94,13 @@ class EssayResponseOutput(BaseModel):
 
 class EssayGradeOutput(BaseModel):
     grade: Literal["A", "B", "C", "D", "F"]
+    reasoning: str = Field(default="", description="One sentence explaining why this grade was assigned.")
 
 class EssayVariantsOutput(BaseModel):
-    """Three essay grades in one JSON (same grading as create_llm_essay_grade_task, variants kept together)."""
+    """Four essay grades (one per stakes variant); filled from separate LLM calls so each variant is graded independently."""
     baseline_response: EssayGradeOutput
     low_stakes_response: EssayGradeOutput
+    medium_stakes_response: EssayGradeOutput
     high_stakes_response: EssayGradeOutput
 
 
@@ -112,12 +114,75 @@ def _strip_json_from_text(text: str) -> str:
     return text
 
 
+def _regex_extract_fields(text: str, schema: Type[BaseModel]) -> Optional[Dict[str, Any]]:
+    """Last-resort field extraction from broken JSON using regex.
+
+    Handles the common Gemini failure mode where the ``reasoning`` string value
+    contains unescaped double-quote characters (e.g. the model quotes a phrase
+    from the essay: ``"The author uses "vivid imagery"...``).  The ``grade``
+    value — a single letter — is almost always intact, so we can recover it.
+
+    For each field we try:
+      1. A quoted-string match that stops at the first bare ``"`` inside the value
+         (works for values with no inner quotes, e.g. ``"grade": "C"``).
+      2. An unquoted-value match (handles ``"grade": C`` without quotes).
+    """
+    obj: Dict[str, Any] = {}
+    for field_name in schema.model_fields:
+        pattern_quoted = r'"' + re.escape(field_name) + r'"\s*:\s*"([^"]*)"'
+        m = re.search(pattern_quoted, text)
+        if m:
+            obj[field_name] = m.group(1)
+            continue
+        pattern_bare = r'"' + re.escape(field_name) + r'"\s*:\s*([^,\}\s]+)'
+        m = re.search(pattern_bare, text)
+        if m:
+            raw = m.group(1).strip('"')
+            if raw == "null":
+                obj[field_name] = None
+            elif raw == "true":
+                obj[field_name] = True
+            elif raw == "false":
+                obj[field_name] = False
+            else:
+                try:
+                    obj[field_name] = int(raw)
+                except ValueError:
+                    try:
+                        obj[field_name] = float(raw)
+                    except ValueError:
+                        obj[field_name] = raw
+    return obj if obj else None
+
+
 def _parse_structured_response(text: str, schema: Type[BaseModel]) -> Dict[str, Any]:
     """Parse JSON text into schema and return as dict. Ensures output conforms to schema."""
     try:
         obj = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Gemini returned invalid JSON for {schema.__name__}: {e}") from e
+    except json.JSONDecodeError as first_err:
+        # Gemini occasionally emits control characters (e.g. raw newlines) in string
+        # values that make the JSON invalid.  Strip C0/C1 control chars (keep \t\n\r)
+        # and retry once before giving up.
+        sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+        try:
+            obj = json.loads(sanitized)
+        except json.JSONDecodeError:
+            # Last resort: regex extraction for schemas with simple primary fields
+            # (e.g. EssayGradeOutput where grade is a single letter and reasoning
+            # may contain unescaped quotes that break JSON parsing).
+            print(
+                f"[Gemini JSON parse failure] schema={schema.__name__}, "
+                f"error={first_err}, raw_text={repr(text[:300])}"
+            )
+            extracted = _regex_extract_fields(text, schema)
+            if extracted:
+                try:
+                    return schema.model_validate(extracted).model_dump()
+                except Exception:
+                    pass
+            raise ValueError(
+                f"Gemini returned invalid JSON for {schema.__name__}: {first_err}"
+            ) from first_err
     try:
         return schema.model_validate(obj).model_dump()
     except Exception as e:
@@ -356,10 +421,21 @@ class LLMClient:
                 max_completion_tokens=task.max_tokens,
                 response_format=task.output_schema,
             )
-            content_obj = resp.parsed_output
+            # OpenAI SDK: structured object is on message.parsed (message.content is often None).
+            # Not resp.parsed_output — that is Anthropic messages.parse().
+            msg = resp.choices[0].message
+            content_obj = getattr(msg, "parsed", None)
+            if content_obj is None and msg.content is not None:
+                content_obj = msg.content
             if content_obj is None:
-                raise ValueError("OpenAI parse returned no parsed_output.")
-            content = content_obj.model_dump()
+                raise ValueError(
+                    "OpenAI chat.completions.parse returned no message.parsed or message.content."
+                )
+            content = (
+                content_obj.model_dump()
+                if hasattr(content_obj, "model_dump")
+                else content_obj
+            )
         else:
             resp = await self.client.chat.completions.create(**kwargs)
             content = resp.choices[0].message.content or ""
@@ -621,28 +697,17 @@ Hard constraints:
 
 LLM_ESSAY_GRADE_SYSTEM_PROMPT = """
 You are grading an essay. Assign a single letter grade: A, B, C, D, or F.
-Output only the letter grade and nothing else.
+Also provide one sentence explaining why you assigned that grade.
 """
 
 LLM_ESSAY_GRADE_USER_TEMPLATE = """
+{user_framing}
 <essay>
 {prompt}
 </essay>
 """
 
-LLM_ESSAY_VARIANTS_USER_TEMPLATE = """
-<baseline_essay>
-{baseline_prompt}
-</baseline_essay>
-
-<low_stakes_essay>
-{low_stakes_prompt}
-</low_stakes_essay>
-
-<high_stakes_essay>
-{high_stakes_prompt}
-</high_stakes_essay>
-"""
+# Variants are graded via separate prompts (create_llm_essay_grade_task) so the LLM does not see other variants.
 
 
 # ============================================================================
@@ -651,35 +716,20 @@ LLM_ESSAY_VARIANTS_USER_TEMPLATE = """
 
 def create_llm_essay_grade_task(
     prompt: str,
+    user_framing: Optional[str] = "",
+    temperature: float = 0.0,
 ) -> InferenceTask:
     """Create a task for grading an essay."""
     return InferenceTask(
         user_prompt_template=LLM_ESSAY_GRADE_USER_TEMPLATE,
         template_vars={
+            "user_framing": user_framing,
             "prompt": prompt,
         },
         system_prompt=LLM_ESSAY_GRADE_SYSTEM_PROMPT,
         output_schema=EssayGradeOutput,
         max_tokens=500,
-    )
-
-
-def create_essay_variants_task(
-    baseline_prompt: str,
-    low_stakes_prompt: str,
-    high_stakes_prompt: str,
-) -> InferenceTask:
-    """Same grading as create_llm_essay_grade_task for three essays; returns one EssayVariantsOutput so variants stay together for filtering."""
-    return InferenceTask(
-        user_prompt_template=LLM_ESSAY_VARIANTS_USER_TEMPLATE,
-        template_vars={
-            "baseline_prompt": baseline_prompt,
-            "low_stakes_prompt": low_stakes_prompt,
-            "high_stakes_prompt": high_stakes_prompt,
-        },
-        system_prompt=LLM_ESSAY_GRADE_SYSTEM_PROMPT,
-        output_schema=EssayVariantsOutput,
-        max_tokens=500,
+        temperature=temperature,
     )
 
 

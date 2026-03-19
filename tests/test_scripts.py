@@ -13,7 +13,7 @@ def test_generate_stakes_variants_help() -> None:
     """Script parses args and prints help."""
     with patch.object(sys, "argv", ["script", "--help"]):
         with pytest.raises(SystemExit):
-            from scripts.generate_stakes_variants import main
+            from scripts.aita_analysis.generate_stakes_variants import main
             main()
 
 
@@ -28,10 +28,10 @@ def test_generate_stakes_variants_run_with_mock(
 
     with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
         with patch(
-            "scripts.generate_stakes_variants.run_batch_inference",
+            "scripts.aita_analysis.generate_stakes_variants.run_batch_inference",
             new_callable=AsyncMock,
         ) as mock_batch:
-            with patch("scripts.generate_stakes_variants.LLMClient"):
+            with patch("scripts.aita_analysis.generate_stakes_variants.LLMClient"):
                 with patch.object(sys, "argv", [
                     "script",
                     "--num_ex", "1",
@@ -39,7 +39,7 @@ def test_generate_stakes_variants_run_with_mock(
                     "--in_csv", str(csv_path),
                     "--out_json", str(out_path),
                 ]):
-                    from scripts.generate_stakes_variants import main
+                    from scripts.aita_analysis.generate_stakes_variants import main
                     main()
             mock_batch.assert_called_once()
             call_kw = mock_batch.call_args[1]
@@ -50,12 +50,12 @@ def test_generate_stakes_variants_run_with_mock(
 def test_generate_syc_eval_help() -> None:
     with patch.object(sys, "argv", ["script", "--help"]):
         with pytest.raises(SystemExit):
-            from scripts.generate_syc_eval import main
+            from scripts.aita_analysis.generate_syc_eval import main
             main()
 
 
 def test_generate_stakes_outputs_help() -> None:
     with patch.object(sys, "argv", ["script", "--help"]):
         with pytest.raises(SystemExit):
-            from scripts.generate_stakes_outputs import main
+            from scripts.aita_analysis.generate_stakes_outputs import main
             main()
