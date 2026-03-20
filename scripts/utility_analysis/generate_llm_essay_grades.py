@@ -58,7 +58,10 @@ def main():
     print(f"Generating essay grades for {args.in_csv} with {num_ex} rows using {args.model} in {args.mode.name} mode...")
 
     df = pd.read_csv(args.in_csv)
-    df = df.sample(n=num_ex, random_state=1234).reset_index(drop=True)
+    if args.num_ex > len(df):
+        print(f"Warning: num_ex ({args.num_ex}) is greater than the number of rows in the dataframe ({len(df)}). Setting num_ex to {len(df)}.")
+        num_ex = len(df)
+    df = df.sample(n=num_ex, random_state=1234)
 
     client = LLMClient(
         endpoint=EndpointConfig(
