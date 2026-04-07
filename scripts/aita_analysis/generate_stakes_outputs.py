@@ -18,7 +18,13 @@ from pathlib import Path
 from inference.batch_inference import run_multi_task_inference, RunMode
 from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, STAKES_OUTPUT_SYSTEM_PROMPT
 import pandas as pd
-from utils.helpers import load_df_from_jsonl
+from utils.helpers import load_df_from_jsonl, extract_extra_fields
+
+# Output keys expected by generate_syc_eval.py
+STAKES_EXTRA_FIELDS_KEY_TO_COL = {
+    "low_var_prompt": "low_variant_prompt",
+    "high_var_prompt": "high_variant_prompt",
+}
 
 
 def make_low_variant_task(row: pd.Series) -> InferenceTask:
@@ -54,14 +60,6 @@ def make_high_variant_task(row: pd.Series) -> InferenceTask:
         max_tokens=512,
         stop_sequences=["\n\n"],  # don't stop on single newline so the full reason completes (Gemini default stops at \n)
     )
-
-
-def extract_extra_fields(row: pd.Series) -> dict:
-    """Extract the variant prompts to include in output for eval script."""
-    return {
-        "low_var_prompt": row.get("low_variant_prompt", ""),
-        "high_var_prompt": row.get("high_variant_prompt", ""),
-    }
 
 
 def load_stakes_variants(jsonl_path: Path) -> pd.DataFrame:
@@ -149,7 +147,7 @@ def main():
         n=n,
         mode=args.mode,
         force_ids=force_ids,
-        extra_fields=extract_extra_fields,
+        extra_fields=lambda row: extract_extra_fields(row, key_to_col=STAKES_EXTRA_FIELDS_KEY_TO_COL),
     ))
 
     print(f"Done! Results written to: {args.out_json}")

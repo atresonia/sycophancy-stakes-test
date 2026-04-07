@@ -166,6 +166,7 @@ async def run_multi_task_inference(
     mode: RunMode = RunMode.SKIP_DONE,
     force_ids: Optional[Set[int]] = None,
     extra_fields: Optional[Callable[[pd.Series], Dict[str, Any]]] = None,
+    combine_outputs: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
 ) -> None:
     """
     Run multiple inference tasks per row (e.g., low and high variants).
@@ -173,6 +174,8 @@ async def run_multi_task_inference(
     Args:
         task_factories: Dict mapping output key names to task factory functions
                        e.g., {"low_var": make_low_task, "high_var": make_high_task}
+        combine_outputs: Optional. Given the dict of {key_output: value}, return extra
+                         fields to merge into the record (e.g. {"output": combined_dict}).
     """
     out_json.parent.mkdir(parents=True, exist_ok=True)
     latest = load_latest_records(out_json)
@@ -213,11 +216,12 @@ async def run_multi_task_inference(
                 task = factory(row)
                 resp = await client.run(task)
                 outputs[f"{key}_output"] = resp["response_content"]
-            
+            extra = combine_outputs(outputs) if combine_outputs else {}
             return {
                 **base_record,
                 "status": "ok",
                 **outputs,
+                **extra,
             }
         except Exception as e:
             return {
