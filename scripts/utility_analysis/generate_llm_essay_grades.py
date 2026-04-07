@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def main():
     parser.add_argument("--base_url", type=str, default=None)
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--in_csv", type=str, default="data/essay_grading/lower_D_F_grade_df.csv")
-    parser.add_argument("--out_csv", type=str, default="data/essay_grading/llm_grades.csv")
+    parser.add_argument("--out_csv", type=str, default=None, help="Path to save output CSV. If omitted, prints to stdout.")
     parser.add_argument("--mode", type=lambda s: RunMode[s.upper()], choices=list(RunMode), default=RunMode.OVERWRITE)
     parser.add_argument("--force_ids", type=str, default=None)
     parser.add_argument("--use_cache", action="store_true", help="Use LLM response caching")
@@ -55,13 +56,13 @@ def main():
         else:
             args.api_key = os.getenv("GEMINI_API_KEY")
 
-    print(f"Generating essay grades for {args.in_csv} with {num_ex} rows using {args.model} in {args.mode.name} mode...")
+    print(f"Generating essay grades for {args.in_csv} with {num_ex} rows using {args.model} in {args.mode.name} mode...", file=sys.stderr)
 
     df = pd.read_csv(args.in_csv)
     if args.num_ex > len(df):
         print(f"Warning: num_ex ({args.num_ex}) is greater than the number of rows in the dataframe ({len(df)}). Setting num_ex to {len(df)}.")
         num_ex = len(df)
-    df = df.sample(n=num_ex, random_state=1234)
+    df = df.sample(n=num_ex, random_state=1234).set_index("essay_id")
 
     client = LLMClient(
         endpoint=EndpointConfig(
@@ -113,20 +114,18 @@ def main():
             return str(output).strip()
 
         results_df["llm_response"] = results_df["output"].apply(extract_grade)
-        results_df = results_df[["prompt_row_id", "llm_response"]]
+        results_df = results_df.set_index("prompt_row_id")[["llm_response"]]
 
-        # Merge with original df on index
-        df = df.reset_index(drop=True)
-        df.index.name = "prompt_row_id"
-        df = df.reset_index()
+        # index is essay_id in both df and results_df (prompt_row_id == essay_id)
+        out_df = df[["essay", "true_grade"]].join(results_df).rename(columns={"true_grade": "ground_truth"}).reset_index(names="essay_id")
 
-        merged = df.merge(results_df, on="prompt_row_id")
-        out_df = merged[["essay_id", "essay", "true_grade", "llm_response"]].rename(columns={"true_grade": "ground_truth"})
-
-        out_path = Path(args.out_csv)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_df.to_csv(out_path, index=False)
-        print(f"Wrote {len(out_df)} rows to: {out_path}")
+        if args.out_csv is None:
+            print(out_df.to_csv(index=False), end="")
+        else:
+            out_path = Path(args.out_csv)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_df.to_csv(out_path, index=False)
+            print(f"Wrote {len(out_df)} rows to: {out_path}")
 
     finally:
         tmp_jsonl.unlink(missing_ok=True)

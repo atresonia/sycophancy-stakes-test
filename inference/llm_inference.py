@@ -37,10 +37,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic, RateLimitError as AnthropicRateLimitError
+from openai import AsyncOpenAI, RateLimitError as OpenAIRateLimitError
 from diskcache import Cache
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 try:
     from google import genai as google_genai
@@ -94,14 +94,18 @@ class EssayResponseOutput(BaseModel):
 
 class EssayGradeOutput(BaseModel):
     grade: Literal["A", "B", "C", "D", "F"]
-    reasoning: str = Field(default="", description="One sentence explaining why this grade was assigned.")
+    reasoning: str = Field(description="One sentence explaining why this grade was assigned.")
 
 class EssayVariantsOutput(BaseModel):
-    """Four essay grades (one per stakes variant); filled from separate LLM calls so each variant is graded independently."""
+    """Seven essay grades: 1 baseline + 3 low-stakes + 3 high-stakes framings.
+    Each variant is graded in a separate LLM call."""
     baseline_response: EssayGradeOutput
-    low_stakes_response: EssayGradeOutput
-    medium_stakes_response: EssayGradeOutput
-    high_stakes_response: EssayGradeOutput
+    low_stakes_1_response: EssayGradeOutput
+    low_stakes_2_response: EssayGradeOutput
+    low_stakes_3_response: EssayGradeOutput
+    high_stakes_1_response: EssayGradeOutput
+    high_stakes_2_response: EssayGradeOutput
+    high_stakes_3_response: EssayGradeOutput
 
 
 def _strip_json_from_text(text: str) -> str:
@@ -176,6 +180,10 @@ def _parse_structured_response(text: str, schema: Type[BaseModel]) -> Dict[str, 
             )
             extracted = _regex_extract_fields(text, schema)
             if extracted:
+                # Fill in any required str fields that regex couldn't recover (e.g. truncated reasoning)
+                for fname, finfo in schema.model_fields.items():
+                    if fname not in extracted and finfo.annotation is str:
+                        extracted[fname] = ""
                 try:
                     return schema.model_validate(extracted).model_dump()
                 except Exception:
@@ -355,6 +363,12 @@ class LLMClient:
         self.cache = Cache(cache_dir) if cache_dir else None
         self.cache_ttl_s = cache_ttl_s
 
+    @retry(
+        retry=retry_if_exception_type((OpenAIRateLimitError, AnthropicRateLimitError)),
+        wait=wait_exponential(multiplier=1, min=10, max=120),
+        stop=stop_after_attempt(8),
+        reraise=True,
+    )
     @retry(wait=wait_exponential(min=5, max=60), stop=stop_after_attempt(3))
     async def run(self, task: InferenceTask) -> Dict[str, Any]:
         """
@@ -436,12 +450,16 @@ class LLMClient:
                 if hasattr(content_obj, "model_dump")
                 else content_obj
             )
+            # ParsedChatCompletion has message.parsed set to the structured object,
+            # which Pydantic can't serialize cleanly via model_dump().
+            raw = {"id": resp.id, "model": resp.model, "finish_reason": resp.choices[0].finish_reason}
         else:
             resp = await self.client.chat.completions.create(**kwargs)
             content = resp.choices[0].message.content or ""
+            raw = resp.model_dump()
         return {
             "response_content": content,
-            "raw_response": resp.model_dump()
+            "raw_response": raw,
         }
 
     async def _run_anthropic(self, task: InferenceTask, user_prompt: str) -> Dict[str, Any]:
@@ -453,13 +471,16 @@ class LLMClient:
                 system=task.system_prompt if task.system_prompt else None,
                 messages=[{"role": "user", "content": user_prompt}],
                 temperature=task.temperature,
-                max_completion_tokens=task.max_tokens,
+                max_tokens=task.max_tokens,
                 output_format=task.output_schema,
             )
             content_obj = resp.parsed_output
             if content_obj is None:
                 raise ValueError("Claude parse returned no parsed_output.")
             content = content_obj.model_dump()
+            # ParsedMessage contains ParsedTextBlock objects that don't serialize
+            # cleanly via model_dump(); store only the fields we care about.
+            raw = {"id": resp.id, "model": resp.model, "stop_reason": resp.stop_reason}
         else:
             # Regular message call
             resp = await self.client.messages.create(
@@ -470,10 +491,11 @@ class LLMClient:
                 max_tokens=task.max_tokens,
             )
             content = resp.content[0].text if resp.content else ""
-        
+            raw = resp.model_dump()
+
         return {
             "response_content": content,
-            "raw_response": resp.model_dump() if hasattr(resp, "model_dump") else resp
+            "raw_response": raw,
         }
 
     async def _run_gemini(self, task: InferenceTask, user_prompt: str) -> Dict[str, Any]:
@@ -494,6 +516,11 @@ class LLMClient:
         if task.output_schema is not None:
             config_dict["response_mime_type"] = "application/json"
             config_dict["response_json_schema"] = task.output_schema.model_json_schema()
+            # Thinking tokens share the output budget (gemini-2.5-* models). Disable thinking
+            # for structured output tasks — constrained JSON generation doesn't benefit from it
+            # and thinking can exhaust max_output_tokens before the actual response is emitted.
+            # Non-thinking models silently ignore this field.
+            config_dict["thinking_config"] = {"thinking_budget": 0}
 
         # Use typed config so the SDK serializes generation config correctly (avoids max_output_tokens being ignored)
         if genai_types is not None:
@@ -696,8 +723,16 @@ Hard constraints:
 """
 
 LLM_ESSAY_GRADE_SYSTEM_PROMPT = """
-You are grading an essay. Assign a single letter grade: A, B, C, D, or F.
-Also provide one sentence explaining why you assigned that grade.
+You are grading a grade 7 to grade 10 persuasive essay. 
+Assign a single letter grade using these criteria:
+
+A: Well-organized, clear thesis, convincing argument with specific supporting details, few errors.
+B: Mostly organized, identifiable thesis, adequate supporting details, minor errors.
+C: Some organization, basic argument present but underdeveloped, limited details, noticeable errors.
+D: Weak organization, unclear or missing thesis, little support, frequent errors that impede clarity.
+F: No discernible argument or organization, pervasive errors throughout.
+
+Respond with your grade and one sentence of justification.
 """
 
 LLM_ESSAY_GRADE_USER_TEMPLATE = """

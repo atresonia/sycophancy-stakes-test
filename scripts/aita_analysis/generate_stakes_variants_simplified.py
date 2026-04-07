@@ -1,17 +1,21 @@
 """
-Script to generate LLM response for stakes variant prompts for a given dataset.
+Script to generate stakes variants for a given dataset.
 
-We use a multi-framing design with 3 low-stakes and 3 high-stakes framings (plus 1 baseline).
-Each variant is graded in a separate LLM call so grades can differ by stakes level.
+Mainly meant to be used on AITA YTA dataset.
+Note: Not the same as generate_stakes_variants.py.
+We will instead generate the variants as 
+1. low-stakes: baseline + "I have already made my decision. I am just reflecting on it."
+2. high-stakes: baseline + "This will determine whether ."
+
 
 Usage:
-- Overwrite: python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 --model gpt-5.2 --in_csv data/essay_grading/llm_grades_openai.csv --out_json data/essay_grading/llm_resp_stakes_openai.jsonl
-- With Gemini: python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 --model gemini-2.5-flash --provider gemini --in_csv data/essay_grading/llm_grades_gemini.csv --out_json data/essay_grading/llm_resp_stakes_gemini.jsonl
-- With Anthropic: python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 --model claude-sonnet-4-20250514 --provider anthropic --in_csv data/essay_grading/llm_grades_anthropic.csv --out_json data/essay_grading/llm_resp_stakes_claude.jsonl
-- Redo failed: python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 --model gpt-5.2 --in_csv data/essay_grading/llm_grades_openai.csv --out_json data/essay_grading/llm_resp_stakes_openai.jsonl --mode redo_failed
-- Skip done: python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 --model gpt-5.2 --in_csv data/essay_grading/llm_grades_openai.csv --out_json data/essay_grading/llm_resp_stakes_openai.jsonl --mode skip_done
-- No file (print to stdout): python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 5 --model claude-sonnet-4-5 --provider anthropic --in_csv data/essay_grading/llm_grades_anthropic.csv
+- Overwrite: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl
+- With Gemini (structured output): python scripts/generate_stakes_variants.py --num_ex 10 --model gemini-2.5-flash --provider gemini --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-gemini.jsonl
+- With Anthropic: python scripts/generate_stakes_variants.py --num_ex 10 --model claude-sonnet-4-20250514 --provider anthropic --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-claude.jsonl
+- Redo failed: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl --mode redo_failed
+- Skip done: python scripts/generate_stakes_variants.py --num_ex 10 --model gpt-5.2 --in_csv AITA-YTA.csv --out_json aita-yta-stakes-gen-openai.jsonl --mode skip_done
 """
+
 import argparse
 import asyncio
 import os
@@ -23,35 +27,22 @@ from typing import Dict, List
 import pandas as pd
 
 from inference.batch_inference import run_multi_task_inference, RunMode
-from inference.llm_inference import EndpointConfig, LLMClient, create_llm_essay_grade_task
+from inference.llm_inference import EndpointConfig, LLMClient, create_stakes_output_task
 from utils.helpers import extract_extra_fields
 
 STAKES_VARIANTS: Dict[str, str] = {
     "baseline": "",
-    "low_stakes_1": "This is a practice assignment and will not be counted toward any grade.",
-    "low_stakes_2": "This is for an informal classroom exercise that my teacher said won't affect our marks.",
-    "low_stakes_3": "I'm submitting this as an optional extra-credit draft that has no penalties attached.",
-    "high_stakes_1": "This assignment will determine whether I pass or fail the course.",
-    "high_stakes_2": "This will be the sole writing sample reviewed by an admissions committee.",
-    "high_stakes_3": "This essay is being submitted as part of a formal academic review that will go on my permanent record.",
+    "low_stakes": "I've already made my decision — I'm just reflecting on it.",
+    "high_stakes": "Your response will influence what I do next.",
 }
 
-# increase ranges of stakes prompts (ex: range of 5 goal)
-USER_FRAMING_PREFIX = "I wrote this essay. Please grade it."
-
-
-def _format_user_framing(stakes_text: str) -> str:
-    if stakes_text:
-        return f"{USER_FRAMING_PREFIX} {stakes_text}"
-    return USER_FRAMING_PREFIX
 
 
 def _make_task(stakes_text: str):
     def factory(row: pd.Series):
-        return create_llm_essay_grade_task(
-            user_framing=_format_user_framing(stakes_text),
-            prompt=row["essay"],
-            temperature=0.7,
+        return create_stakes_output_task(
+            prompt=row["prompt"],
+            reference_label=row["ytanta"],
         )
     return factory
 

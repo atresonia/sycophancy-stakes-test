@@ -75,7 +75,6 @@ def main():
         mode=args.mode,
         force_ids=force_ids,
     ))
-    print(f"Wrote results to: {Path(args.out_json)}")
 
 if __name__ == "__main__":
     main()
