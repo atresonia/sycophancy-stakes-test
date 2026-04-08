@@ -27,11 +27,12 @@ import asyncio
 import orjson
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Callable, List
+from typing import Any, Dict, Optional, Callable, List
 from tqdm import tqdm
 import pandas as pd
 
-from inference.llm_inference import LLMClient, InferenceTask
+from inference.client import LLMClient
+from inference.task import InferenceTask
 
 
 class RunMode(Enum):
@@ -75,7 +76,7 @@ async def run_batch_inference(
     out_json: Path,
     n: int = 10,
     mode: RunMode = RunMode.SKIP_DONE,
-    force_ids: Optional[Set[int]] = None,
+    force_ids: Optional[List[int]] = None,
     extra_fields: Optional[Callable[[pd.Series], Dict[str, Any]]] = None,
 ) -> None:
     """
@@ -164,7 +165,7 @@ async def run_multi_task_inference(
     out_json: Path,
     n: int = 10,
     mode: RunMode = RunMode.SKIP_DONE,
-    force_ids: Optional[Set[int]] = None,
+    force_ids: Optional[List[int]] = None,
     extra_fields: Optional[Callable[[pd.Series], Dict[str, Any]]] = None,
     combine_outputs: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
 ) -> None:

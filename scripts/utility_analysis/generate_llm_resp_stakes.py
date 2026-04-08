@@ -23,7 +23,8 @@ from typing import Dict, List
 import pandas as pd
 
 from inference.batch_inference import run_multi_task_inference, RunMode
-from inference.llm_inference import EndpointConfig, LLMClient, create_llm_essay_grade_task
+from inference.client import EndpointConfig, LLMClient
+from inference.prompts.essay import create_llm_essay_grade_task
 from utils.helpers import extract_extra_fields
 
 STAKES_VARIANTS: Dict[str, str] = {

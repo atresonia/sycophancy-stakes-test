@@ -15,7 +15,8 @@ from inference.batch_inference import (
     run_batch_inference,
     run_multi_task_inference,
 )
-from inference.llm_inference import InferenceTask, LLMClient, EndpointConfig
+from inference.client import LLMClient, EndpointConfig
+from inference.task import InferenceTask
 
 
 def test_load_latest_records_empty_path(tmp_path: Path) -> None:

@@ -93,22 +93,29 @@ All scripts support `--mode OVERWRITE | SKIP_DONE | REDO_FAILED` and `--provider
 
 ### Core inference layer (`inference/`)
 
-**`llm_inference.py`** — unified LLM client and task abstraction:
-- `InferenceTask` dataclass: carries prompt (direct string or template + vars), system prompt, output schema (Pydantic), temperature, max_tokens. Use `task.with_vars(**kwargs)` for immutable updates.
-- `LLMClient`: single `async run(task)` method dispatches to `_run_openai`, `_run_anthropic`, or `_run_gemini`. Handles disk caching (`diskcache`), concurrency semaphore, and retry logic (`tenacity`).
+Split into single-responsibility modules:
+
+**`client.py`** — `LLMClient` and `EndpointConfig`:
+- `LLMClient`: single `async run(task)` method dispatches to `_run_openai`,
+  `_run_anthropic`, or `_run_gemini`. Handles disk caching (`diskcache`),
+  concurrency semaphore, and retry logic (`tenacity`).
 - `EndpointConfig`: provider + model + api_key + optional base_url.
 
-**Output schemas (Pydantic):**
-- `EssayGradeOutput` — single letter grade `{A, B, C, D, F}`
-- `EssayVariantsOutput` — seven `EssayGradeOutput` fields: `baseline_response`, `low_stakes_1_response`, `low_stakes_2_response`, `low_stakes_3_response`, `high_stakes_1_response`, `high_stakes_2_response`, `high_stakes_3_response`. Each variant is graded in a separate LLM call.
-- `EssayResponseOutput` — grade + the original prompt (used for individual grading)
-- `StakesOutput`, `SycophancyEvalOutput` — legacy AITA pipeline schemas (still present, not used in current essay pipeline)
+**`task.py`** — `InferenceTask` dataclass:
+- Carries prompt (direct string or template + vars), system prompt, output
+  schema (Pydantic), temperature, max_tokens.
+- Use `task.with_vars(**kwargs)` for immutable updates.
 
-**Prompt templates and factory functions:**
-- `create_llm_essay_grade_task(prompt)` → grades a single essay, returns `EssayGradeOutput`
-- Stakes variants are graded via `create_llm_essay_grade_task(prompt)` per variant; `run_multi_task_inference` runs seven tasks per row and assembles `EssayVariantsOutput`.
-- `LLM_ESSAY_GRADE_SYSTEM_PROMPT` — instructs the model to output only a single letter grade
-- `LLM_ESSAY_GRADE_USER_TEMPLATE` — wraps a single essay in `<essay>` tags for grading
+**`parsing.py`** — JSON/structured-output parsing helpers for Gemini responses.
+
+**`schemas/`** — Pydantic output models:
+- `schemas/essay.py`: `EssayGradeOutput`, `EssayVariantsOutput`, `EssayResponseOutput`
+- `schemas/aita.py`: Legacy AITA schemas (`StakesOutput`, `SycophancyEvalOutput`, etc.)
+
+**`prompts/`** — Prompt templates and task factory functions:
+- `prompts/essay.py`: `LLM_ESSAY_GRADE_SYSTEM_PROMPT`, `LLM_ESSAY_GRADE_USER_TEMPLATE`,
+  `create_llm_essay_grade_task`
+- `prompts/aita.py`: Legacy AITA prompt templates and factories
 
 **`batch_inference.py`** — async batch runner over DataFrames:
 - `run_batch_inference(df, client, task_factory, out_json, n, mode, force_ids, extra_fields)`: one task per row, `task_factory` receives a `pd.Series` and returns an `InferenceTask`.
@@ -173,6 +180,8 @@ All tests mock `LLMClient.run` — no real API calls. `conftest.py` provides sha
 ## Key Conventions
 
 - Prefer `run(InferenceTask(...))` over the backwards-compatible `chat()` method.
+- Import from submodules directly: `inference.client`, `inference.task`, `inference.schemas.essay`, etc.
+- Each module in `inference/` has a single responsibility. Schemas go in `schemas/`, prompt templates and factories go in `prompts/`, parsing helpers go in `parsing.py`.
 - LLM cache lives in `.llm_cache/` (disk cache, 7-day TTL). Caching is **opt-in** in `generate_llm_resp_stakes.py` via `--use_cache` flag (off by default).
 - All batch output `.jsonl` records include `status: "ok" | "error"` and `prompt_row_id` (int).
 - Use `--provider anthropic` or `--provider gemini` for native structured output; `openai_compat` normalizes responses to schema when possible.

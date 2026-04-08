@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from inference.llm_inference import StakesOutput
+from inference.schemas.aita import StakesOutput
 
 
 def _strip_json_code_block(text: str) -> str:

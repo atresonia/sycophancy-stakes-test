@@ -22,7 +22,9 @@ from pathlib import Path
 import pandas as pd
 
 from inference.batch_inference import run_batch_inference, RunMode
-from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, create_llm_essay_grade_task
+from inference.client import EndpointConfig, LLMClient
+from inference.task import InferenceTask
+from inference.prompts.essay import create_llm_essay_grade_task
 
 
 def make_llm_essay_grade_task(row: pd.Series) -> InferenceTask:
