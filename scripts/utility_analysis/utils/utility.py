@@ -23,6 +23,9 @@ We fit this utility function to the data (currently only for essay grading task)
 """
 from __future__ import annotations
 
+import json
+from collections import Counter
+from pathlib import Path
 from typing import NamedTuple, Any
 
 import numpy as np
@@ -31,6 +34,23 @@ from scipy.special import log_softmax
 
 GRADES = ["A", "B", "C", "D", "F"]
 GRADE_NUM = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
+
+LOW_KEYS = ["low_stakes_1", "low_stakes_2", "low_stakes_3"]
+HIGH_KEYS = ["high_stakes_1", "high_stakes_2", "high_stakes_3"]
+
+
+def majority(grades: list[str]) -> str:
+    return Counter(grades).most_common(1)[0][0]
+
+
+def load_jsonl(path: Path) -> list[dict]:
+    records = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    return records
 MAX_DIST = 4 # (A=4, F=0)
 
 V: dict[str, float] = {g: GRADE_NUM[g] / MAX_DIST for g in GRADES}

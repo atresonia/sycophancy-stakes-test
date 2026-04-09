@@ -69,43 +69,59 @@ def atomic_rewrite_jsonl(out_json: Path, records: Dict[int, Dict[str, Any]]) -> 
     tmp.replace(out_json)
 
 
+def _is_ok(rec: Dict[str, Any]) -> bool:
+    return rec.get("status") == "ok"
+
+
 async def run_batch_inference(
     df: pd.DataFrame,
     client: LLMClient,
     task_factory: Callable[[pd.Series], InferenceTask],
-    out_json: Path,
+    out_json: Optional[Path] = None,
     n: int = 10,
     mode: RunMode = RunMode.SKIP_DONE,
     force_ids: Optional[List[int]] = None,
     extra_fields: Optional[Callable[[pd.Series], Dict[str, Any]]] = None,
-) -> None:
+    done_ids: Optional[List[int]] = None,
+) -> Dict[int, Dict[str, Any]]:
     """
     Run batch inference over a dataframe.
-    
+
     Args:
         df: DataFrame with rows to process (index is used as row id)
         client: LLMClient instance
         task_factory: Function that takes a row and returns an InferenceTask
-        out_json: Path to output jsonl file
+        out_json: Optional path to persist results as a jsonl. When provided,
+                  prior results are loaded to support SKIP_DONE / REDO_FAILED
+                  across runs and the file is atomically rewritten after each
+                  run. When omitted, results are only returned in-memory.
         n: Max number of rows to process
         mode: How to handle existing results
         force_ids: Explicitly rerun these row ids regardless of mode
         extra_fields: Optional function to extract extra fields from row for output
+        done_ids: Row IDs already known to be successfully completed (e.g. from an
+                  external CSV). Used for SKIP_DONE / REDO_FAILED when out_json is
+                  not provided.
     """
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    latest = load_latest_records(out_json)
-    
-    def is_success(rec: Dict[str, Any]) -> bool:
-        return rec.get("status") == "ok"
+    if out_json is not None:
+        out_json.parent.mkdir(parents=True, exist_ok=True)
+    latest = load_latest_records(out_json) if out_json is not None else {}
+
+    # External successes are kept as a separate set — never written to latest/jsonl
+    # so the final atomic_rewrite only contains real inference results.
+    external_done: set[int] = set(done_ids) if (done_ids and mode != RunMode.OVERWRITE) else set()
 
     # Determine which rows to process
     if mode == RunMode.OVERWRITE:
         latest = {}
         candidates = list(df.index)
     elif mode == RunMode.REDO_FAILED:
-        candidates = [rid for rid in df.index if (rid not in latest) or (not is_success(latest[rid]))]
+        # Skip only confirmed successes; retry failures and unseen rows.
+        candidates = [rid for rid in df.index
+                      if rid not in external_done and not (rid in latest and _is_ok(latest[rid]))]
     elif mode == RunMode.SKIP_DONE:
-        candidates = [rid for rid in df.index if rid not in latest]
+        # Skip anything already tried (success or failure) or externally done.
+        candidates = [rid for rid in df.index if rid not in latest and rid not in external_done]
     else:
         raise ValueError(f"Invalid mode={mode}")
 
@@ -154,8 +170,10 @@ async def run_batch_inference(
         record = await fut
         latest[record["prompt_row_id"]] = record
         
-    atomic_rewrite_jsonl(out_json, latest)
-    print(f"Wrote results to: {out_json}")
+    if out_json is not None:
+        atomic_rewrite_jsonl(out_json, latest)
+        print(f"Wrote results to: {out_json}")
+    return latest
 
 
 async def run_multi_task_inference(
@@ -181,14 +199,11 @@ async def run_multi_task_inference(
     out_json.parent.mkdir(parents=True, exist_ok=True)
     latest = load_latest_records(out_json)
     
-    def is_success(rec: Dict[str, Any]) -> bool:
-        return rec.get("status") == "ok"
-
     if mode == RunMode.OVERWRITE:
         latest = {}
         candidates = list(df.index)
     elif mode == RunMode.REDO_FAILED:
-        candidates = [rid for rid in df.index if (rid not in latest) or (not is_success(latest[rid]))]
+        candidates = [rid for rid in df.index if (rid not in latest) or (not _is_ok(latest[rid]))]
     elif mode == RunMode.SKIP_DONE:
         candidates = [rid for rid in df.index if rid not in latest]
 
@@ -212,11 +227,9 @@ async def run_multi_task_inference(
             base_record.update(extra_fields(row))
         
         try:
-            outputs = {}
-            for key, factory in task_factories.items():
-                task = factory(row)
-                resp = await client.run(task)
-                outputs[f"{key}_output"] = resp["response_content"]
+            keys = list(task_factories.keys())
+            resps = await asyncio.gather(*[client.run(factory(row)) for factory in task_factories.values()])
+            outputs = {f"{key}_output": resp["response_content"] for key, resp in zip(keys, resps)}
             extra = combine_outputs(outputs) if combine_outputs else {}
             return {
                 **base_record,

@@ -21,6 +21,15 @@ emotional state, effort level, or explicit accuracy requests.
 
 The utility function `U(r|s) = α·V(r) + β·A(r|g) − γ·s·H(r|g)` models the LLM's implicit trade-off between user validation (V), accuracy (A), and stakes-weighted harm (H). Parameters α, β, γ are fit via MLE across all LLM responses.
 
+**Core hypothesis:** Higher stakes cause the model to be *less* sycophantic — because the harm term γ·s·H(r|g) grows with s, making sycophantic responses (high V, low A) increasingly costly. The model should prefer more accurate grades under high stakes to avoid that penalty. A positive γ confirms the hypothesis; γ = 0 means stakes have no effect; γ < 0 means the model is perversely more sycophantic under high stakes.
+
+**What each parameter captures:**
+- **α** — baseline pull toward validation (how much the model intrinsically wants to please, regardless of stakes)
+- **β** — baseline pull toward accuracy (how much the model intrinsically wants to be correct, regardless of stakes)
+- **γ** — stakes sensitivity: how much the model discounts sycophantic responses as consequences grow. This is the primary parameter of interest. A large γ means the model strongly modulates behavior with stakes; small γ means it is stakes-insensitive.
+
+β does not increase with stakes — it is a fixed accuracy weight. What changes with higher s is that the harm penalty γ·s·H(r|g) dominates, effectively making the cost of a sycophantic response higher. The effect of stakes is entirely captured by γ interacting with s in the harm term.
+
 ## Setup
 
 ```bash

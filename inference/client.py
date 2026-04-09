@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from anthropic import AsyncAnthropic, RateLimitError as AnthropicRateLimitError
 from openai import AsyncOpenAI, RateLimitError as OpenAIRateLimitError
 from diskcache import Cache
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
 try:
     from google import genai as google_genai
@@ -67,11 +67,15 @@ class LLMClient:
     def __init__(
         self,
         endpoint: EndpointConfig,
-        max_concurrency: int = 16,
+        max_concurrency: Optional[int] = None,
         timeout_s: float = 60.0,
         cache_dir: Optional[str] = ".llm_cache",
         cache_ttl_s: int = 7 * 24 * 3600
     ):
+        # OpenAI rate limits are tighter; default to lower concurrency to avoid 429s.
+        # Gemini and Anthropic tolerate higher parallelism.
+        if max_concurrency is None:
+            max_concurrency = 5 if endpoint.provider == "openai_compat" else 16
         self.endpoint = endpoint
 
         if endpoint.provider == "openai_compat":
@@ -98,11 +102,10 @@ class LLMClient:
 
     @retry(
         retry=retry_if_exception_type((OpenAIRateLimitError, AnthropicRateLimitError)),
-        wait=wait_exponential(multiplier=1, min=10, max=120),
+        wait=wait_random_exponential(multiplier=1, min=10, max=120),
         stop=stop_after_attempt(8),
         reraise=True,
     )
-    @retry(wait=wait_exponential(min=5, max=60), stop=stop_after_attempt(3))
     async def run(self, task: InferenceTask) -> Dict[str, Any]:
         """
         Run an inference task and return the result.
