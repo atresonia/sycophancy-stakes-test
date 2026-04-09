@@ -6,15 +6,12 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from inference.llm_inference import (
-    EndpointConfig,
-    InferenceTask,
-    LLMClient,
-    StakesOutput,
-    SycophancyEvalOutput,
+from inference.client import EndpointConfig, LLMClient, stable_key
+from inference.task import InferenceTask
+from inference.schemas.aita import StakesOutput, SycophancyEvalOutput
+from inference.prompts.aita import (
     create_stakes_generation_task,
     create_sycophancy_eval_task,
-    stable_key,
     DEFAULT_STAKES_DESCRIPTION,
 )
 
@@ -175,7 +172,7 @@ class TestLLMClientAnthropic:
     async def test_run_anthropic_with_schema(
         self, client: LLMClient, sample_stakes_output_dict: dict
     ) -> None:
-        from inference.llm_inference import StakesOutput
+        from inference.schemas.aita import StakesOutput
         parsed = StakesOutput.model_validate(sample_stakes_output_dict)
         with patch.object(client.client.messages, "parse", new_callable=AsyncMock) as m:
             m.return_value = MagicMock(

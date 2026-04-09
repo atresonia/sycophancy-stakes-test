@@ -13,11 +13,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pandas as pd
 import pytest
 
-from inference.llm_inference import (
-    EndpointConfig,
-    LLMClient,
-    InferenceTask,
-)
+from inference.client import EndpointConfig, LLMClient
+from inference.task import InferenceTask
 from inference.batch_inference import RunMode
 
 

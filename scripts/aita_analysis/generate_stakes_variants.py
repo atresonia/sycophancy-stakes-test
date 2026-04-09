@@ -13,7 +13,9 @@ Usage:
 import argparse
 import asyncio
 from inference.batch_inference import run_batch_inference, RunMode
-from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, create_stakes_generation_task
+from inference.client import EndpointConfig, LLMClient
+from inference.task import InferenceTask
+from inference.prompts.aita import create_stakes_generation_task
 import pandas as pd
 from pathlib import Path
 import os

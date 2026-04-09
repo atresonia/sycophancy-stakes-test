@@ -17,7 +17,9 @@ import os
 from pathlib import Path
 import pandas as pd
 from inference.batch_inference import run_batch_inference, RunMode
-from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, Provider, create_sycophancy_eval_task
+from inference.client import EndpointConfig, LLMClient, Provider
+from inference.task import InferenceTask
+from inference.prompts.aita import create_sycophancy_eval_task
 from utils.helpers import load_df_from_jsonl
 
 def make_sycophancy_eval_task(row: pd.Series) -> InferenceTask:

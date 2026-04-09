@@ -23,7 +23,8 @@ from typing import Dict, List
 import pandas as pd
 
 from inference.batch_inference import run_multi_task_inference, RunMode
-from inference.llm_inference import EndpointConfig, LLMClient, create_llm_essay_grade_task
+from inference.client import EndpointConfig, LLMClient
+from inference.prompts.essay import create_llm_essay_grade_task
 from utils.helpers import extract_extra_fields
 
 STAKES_VARIANTS: Dict[str, str] = {
@@ -91,7 +92,7 @@ def main():
     parser.add_argument("--mode", type=lambda s: RunMode[s.upper()], choices=list(RunMode), default=RunMode.OVERWRITE)
     parser.add_argument("--force_ids", type=str, default=None)
     parser.add_argument("--use_cache", action="store_true", help="Use LLM response caching")
-    parser.add_argument("--max_concurrency", type=int, default=16, help="Max concurrent LLM requests. Lower this if hitting rate limits (e.g. 3-5 for OpenAI).")
+    parser.add_argument("--max_concurrency", type=int, default=None, help="Max concurrent LLM requests. Uses provider-appropriate default if unset.")
     args = parser.parse_args()
 
     force_ids = [int(fid) for fid in args.force_ids.split(",")] if args.force_ids else None

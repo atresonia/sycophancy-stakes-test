@@ -13,16 +13,16 @@ Usage:
 """
 import argparse
 import asyncio
-import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pandas as pd
 
 from inference.batch_inference import run_batch_inference, RunMode
-from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, create_llm_essay_grade_task
+from inference.client import EndpointConfig, LLMClient
+from inference.task import InferenceTask
+from inference.prompts.essay import create_llm_essay_grade_task
 
 
 def make_llm_essay_grade_task(row: pd.Series) -> InferenceTask:
@@ -74,61 +74,75 @@ def main():
         cache_dir=".llm_cache" if args.use_cache else None,
     )
 
-    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
-        tmp_jsonl = Path(tmp.name)
+    # Read existing CSV once — used to skip already-done rows (done_ids) and to
+    # fill them back after the join (the batch runner only processes new rows, so
+    # previously-successful grades would otherwise be NaN in the output).
+    done_ids: list[int] | None = None
+    existing_grades: pd.Series | None = None
+    if args.mode in (RunMode.REDO_FAILED, RunMode.SKIP_DONE) and args.out_csv:
+        try:
+            existing_df = pd.read_csv(args.out_csv).set_index("essay_id")
+            valid = existing_df["llm_response"].notna() & (existing_df["llm_response"].str.strip() != "")
+            done_ids = existing_df.index[valid].astype(int).tolist()
+            existing_grades = existing_df.loc[valid, "llm_response"]
+            print(f"Found {len(done_ids)} already-completed rows in {args.out_csv}.", file=sys.stderr)
+        except FileNotFoundError:
+            pass
 
-    try:
-        asyncio.run(run_batch_inference(
-            df=df,
-            client=client,
-            task_factory=make_llm_essay_grade_task,
-            out_json=tmp_jsonl,
-            n=num_ex,
-            mode=args.mode,
-            force_ids=force_ids,
-        ))
+    results = asyncio.run(run_batch_inference(
+        df=df,
+        client=client,
+        task_factory=make_llm_essay_grade_task,
+        n=num_ex,
+        mode=args.mode,
+        force_ids=force_ids,
+        done_ids=done_ids,
+    ))
 
-        # Load results and join with original df
-        records = []
-        with open(tmp_jsonl) as f:
-            for line in f:
-                records.append(json.loads(line))
-
-        results_df = pd.DataFrame(records)
-
-        # Report errors to help diagnose issues
-        error_rows = results_df[results_df["status"] == "error"]
-        if not error_rows.empty:
-            print(f"WARNING: {len(error_rows)}/{len(results_df)} rows failed:")
-            for _, row in error_rows.iterrows():
-                print(f"  Row {row['prompt_row_id']}: {row.get('error', 'unknown error')} \n {row.get('traceback', 'no traceback')} ")
-
-        results_df = results_df[results_df["status"] == "ok"].copy()
-        if results_df.empty:
-            raise RuntimeError("All inference calls failed — check errors above.")
-
-        # Extract grade from structured output
-        def extract_grade(output):
-            if isinstance(output, dict):
-                return output.get("grade", "")
-            return str(output).strip()
-
-        results_df["llm_response"] = results_df["output"].apply(extract_grade)
-        results_df = results_df.set_index("prompt_row_id")[["llm_response"]]
-
-        # index is essay_id in both df and results_df (prompt_row_id == essay_id)
-        out_df = df[["essay", "true_grade"]].join(results_df).rename(columns={"true_grade": "ground_truth"}).reset_index(names="essay_id")
-
-        if args.out_csv is None:
-            print(out_df.to_csv(index=False), end="")
+    error_rows = []
+    ok_rows: dict[int, dict] = {}
+    for rid, r in results.items():
+        if r.get("status") == "ok":
+            ok_rows[rid] = r
         else:
-            out_path = Path(args.out_csv)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_df.to_csv(out_path, index=False)
-            print(f"Wrote {len(out_df)} rows to: {out_path}")
+            error_rows.append(r)
 
-    finally:
-        tmp_jsonl.unlink(missing_ok=True)
+    if error_rows:
+        print(f"WARNING: {len(error_rows)}/{len(results)} rows failed:")
+        for r in error_rows:
+            print(f"  Row {r['prompt_row_id']}: {r.get('error', 'unknown error')}\n{r.get('traceback', '')}")
+
+    if not ok_rows and existing_grades is None:
+        raise RuntimeError("All inference calls failed — check errors above.")
+
+    def extract_grade(output) -> str:
+        if isinstance(output, dict):
+            return output.get("grade", "")
+        return str(output).strip()
+
+    results_df = (
+        pd.DataFrame([
+            {"prompt_row_id": rid, "llm_response": extract_grade(r["output"])}
+            for rid, r in ok_rows.items()
+        ]).set_index("prompt_row_id")
+        if ok_rows else pd.DataFrame(columns=["llm_response"])
+    )
+
+    out_df = df[["essay", "true_grade"]].join(results_df).rename(columns={"true_grade": "ground_truth"}).reset_index(names="essay_id")
+
+    # Fill in grades for rows that were skipped (already successful in a prior run).
+    if existing_grades is not None:
+        out_df = out_df.set_index("essay_id")
+        out_df["llm_response"] = out_df["llm_response"].fillna(existing_grades)
+        out_df = out_df.reset_index()
+
+    if args.out_csv is None:
+        print(out_df.to_csv(index=False), end="")
+    else:
+        out_path = Path(args.out_csv)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_df.to_csv(out_path, index=False)
+        print(f"Wrote {len(out_df)} rows to: {out_path}")
 
 
 if __name__ == "__main__":

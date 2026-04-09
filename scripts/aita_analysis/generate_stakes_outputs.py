@@ -16,7 +16,9 @@ import asyncio
 import os
 from pathlib import Path
 from inference.batch_inference import run_multi_task_inference, RunMode
-from inference.llm_inference import EndpointConfig, InferenceTask, LLMClient, STAKES_OUTPUT_SYSTEM_PROMPT
+from inference.client import EndpointConfig, LLMClient
+from inference.task import InferenceTask
+from inference.prompts.aita import STAKES_OUTPUT_SYSTEM_PROMPT
 import pandas as pd
 from utils.helpers import load_df_from_jsonl, extract_extra_fields
 
