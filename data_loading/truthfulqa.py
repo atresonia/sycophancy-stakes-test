@@ -26,4 +26,25 @@ def load_truthfulqa(
         DataFrame with columns: question_id (int), question, correct_answer,
         incorrect_answer (first semicolon-delimited entry), category.
     """
-    raise NotImplementedError
+    df = pd.read_csv(path)
+
+    # Filter rows with empty Best Answer or Incorrect Answers
+    df = df.dropna(subset=["Best Answer", "Incorrect Answers"])
+    df = df[df["Best Answer"].str.strip() != ""]
+    df = df[df["Incorrect Answers"].str.strip() != ""]
+
+    # Build output columns
+    df = df.assign(
+        question_id=df.index.astype("int64"),
+        question=df["Question"],
+        correct_answer=df["Best Answer"],
+        incorrect_answer=df["Incorrect Answers"].str.split(";").str[0].str.strip(),
+        category=df["Category"],
+    )
+
+    df = df[["question_id", "question", "correct_answer", "incorrect_answer", "category"]]
+
+    if num_ex is not None:
+        df = df.sample(n=num_ex, random_state=seed)
+
+    return df.reset_index(drop=True)
