@@ -50,6 +50,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--in_json", default="data/essay_grading/it-variants/llm_resp_stakes_gemini_variants.jsonl")
     parser.add_argument("--out_png",  default="plots/grade_shift_by_class.png")
+    parser.add_argument("--model", default="Gemini")
     args = parser.parse_args()
 
     records = load(Path(args.in_json))
@@ -95,7 +96,7 @@ def main():
         ax.set_axisbelow(True)
 
     axes[0].set_ylabel("Number of essays", fontsize=10)
-    fig.suptitle("Grade Shift from Baseline by True Grade", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{args.model} Grade Shift from Baseline by True Grade", fontsize=13, fontweight="bold")
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=10,

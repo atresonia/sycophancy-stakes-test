@@ -50,6 +50,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--in_json", default="data/essay_grading/it-variants/llm_resp_stakes_gemini_variants.jsonl")
     parser.add_argument("--out_png", default="plots/grade_inflation_by_class.png")
+    parser.add_argument("--model", default="gemini")
     args = parser.parse_args()
 
     records = load(Path(args.in_json))
