@@ -92,6 +92,12 @@ python scripts/utility_analysis/generate_llm_resp_stakes.py --num_ex 10 \
     --in_csv data/essay_grading/llm_grades_anthropic.csv \
     --out_json data/essay_grading/llm_resp_stakes_claude.jsonl
 
+# Step 2b — generate time × stakes variant grades (2×2 factorial)
+python scripts/utility_analysis/generate_llm_resp_time_stakes.py \
+    --num_ex 100 --model gemini-2.5-flash --provider gemini \
+    --in_csv data/essay_grading/llm_grades_gemini.csv \
+    --out_json data/essay_grading/llm_resp_time_stakes_gemini.jsonl
+
 # Step 3 — fit utility function (α, β, γ) via MLE + analyze results
 # [script path TBD]
 ```
@@ -169,17 +175,34 @@ All three framings within a stakes level share the same s value in the utility f
 
 MLE fitting: for each essay i with ground truth g_i at stakes s_i, compute `U(r|s_i, g_i)` for all five grade candidates, softmax to probabilities, select the probability for the LLM's actual response. Maximize sum of log-probabilities across all prompts to fit α, β, γ.
 
+### Time × Stakes Utility Extension
+
+For the 2×2 experiment, each cell maps to (s, t) where:
+- s=1 (low stakes), s=3 (high stakes)
+- t=1 (short time), t=3 (long time)
+Baseline (s=0, t=0) is excluded from fitting.
+
+Analysis: compute mean inflation per cell, then test main effects of stakes,
+time, and their interaction.
+
 ### Pipeline scripts (`scripts/utility_analysis/`)
 
 - `generate_llm_resp_stakes.py` — takes a `llm_grades_*.csv`, samples `--num_ex` rows, constructs 7 stakes-variant prompts (1 baseline + 3 low + 3 high), runs seven `create_llm_essay_grade_task` calls per row via `run_multi_task_inference`, writes `.jsonl` with `EssayVariantsOutput` per row.
+- `generate_llm_resp_time_stakes.py` — 2×2 time × stakes experiment. Takes a
+  `llm_grades_*.csv`, constructs 5 variant prompts (1 baseline + 2×2 factorial:
+  low/high stakes × short/long time), runs five `create_llm_essay_grade_task`
+  calls per row via `run_multi_task_inference`, writes `.jsonl`.
+- `experiment_runner.py` — shared infrastructure (CLI parser, API key resolution,
+  user framing formatting, experiment runner) used by all essay experiment scripts.
 
 ### Data flow
 
 ```
 data/test_set.tsv + valid_sample_submission_5_column.csv
   → [grading script]             → data/essay_grading/llm_grades_*.csv        (essay_id, essay, ground_truth, llm_response)
-  → generate_llm_resp_stakes.py  → data/essay_grading/llm_resp_stakes_*.jsonl  (EssayVariantsOutput per row)
-  → [utility fit script]         → utility-fit results + plots
+  → generate_llm_resp_stakes.py       → data/essay_grading/llm_resp_stakes_*.jsonl       (EssayVariantsOutput per row)
+  → generate_llm_resp_time_stakes.py → data/essay_grading/llm_resp_time_stakes_*.jsonl
+  → [utility fit script]             → utility-fit results + plots
 ```
 
 ### Tests (`tests/`)
@@ -196,3 +219,6 @@ All tests mock `LLMClient.run` — no real API calls. `conftest.py` provides sha
 - Use `--provider anthropic` or `--provider gemini` for native structured output; `openai_compat` normalizes responses to schema when possible.
 - The ground truth for sycophancy measurement is the LLM-adjudicated `llm_response` column from `llm_grades_*.csv`, not the raw ASAP score. Essays are filtered to `ground_truth` ∈ {B, C, D, F} so there is always a clear sycophantic direction (toward A) and a non-sycophantic direction.
 - Baseline variant (`s=0`) is used for reference only; exclude from utility function MLE fitting.
+- New experiment scripts should define only a variant dict and call
+  `experiment_runner.run_experiment()`. All CLI args, client setup, and
+  batch execution live in `experiment_runner.py`.

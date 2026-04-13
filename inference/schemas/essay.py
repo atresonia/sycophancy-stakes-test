@@ -25,3 +25,13 @@ class EssayVariantsOutput(BaseModel):
     high_stakes_1_response: EssayGradeOutput
     high_stakes_2_response: EssayGradeOutput
     high_stakes_3_response: EssayGradeOutput
+
+
+class TimeStakesVariantsOutput(BaseModel):
+    """Five essay grades for the 2×2 time × stakes experiment plus baseline.
+    Each variant is graded in a separate LLM call."""
+    baseline_response: EssayGradeOutput
+    low_short_response: EssayGradeOutput
+    low_long_response: EssayGradeOutput
+    high_short_response: EssayGradeOutput
+    high_long_response: EssayGradeOutput
