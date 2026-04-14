@@ -32,10 +32,7 @@ pip install -e ".[dev]"
 Run the test suite to verify code changes without calling real APIs:
 
 ```bash
-# From repo root (recommended)
-./scripts/run_tests.sh
-
-# Or with pytest directly
+# with pytest directly
 pip install -e ".[dev]"
 pytest tests/ -v
 

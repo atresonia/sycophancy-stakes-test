@@ -230,7 +230,7 @@ async def run_multi_task_inference(
             keys = list(task_factories.keys())
             resps = await asyncio.gather(*[client.run(factory(row)) for factory in task_factories.values()])
             outputs = {f"{key}_output": resp["response_content"] for key, resp in zip(keys, resps)}
-            extra = combine_outputs(outputs) if combine_outputs else {}
+            extra = combine_outputs(outputs, base_record) if combine_outputs else {}
             return {
                 **base_record,
                 "status": "ok",

@@ -129,6 +129,8 @@ class LLMClient:
             "max_tokens": task.max_tokens,
             "output_schema": task.output_schema.__name__ if task.output_schema else None,
         }
+        if task.repeat_idx is not None:
+            cache_payload["repeat_idx"] = task.repeat_idx
 
         if self.cache is not None:
             key = stable_key(cache_payload)

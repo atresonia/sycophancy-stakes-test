@@ -62,8 +62,6 @@ Pre-generated LLM grade files live in `data/essay_grading/`:
 
 **Run tests (no API keys needed — all mocked):**
 ```bash
-./scripts/run_tests.sh
-# or
 pytest tests/ -v
 ```
 

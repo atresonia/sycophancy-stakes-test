@@ -75,7 +75,7 @@ This is a replication-and-extension of "Not Your Typical Sycophant: The Elusive 
 - No hidden magic. Seeds passed explicitly. Dollar amounts as module-level constants (`LOW_STAKES_USD = 10`, etc.) — never hard-coded inside f-strings.
 - No new dependencies unless strictly necessary. If needed, stop and ask me first.
 - Follow `CLAUDE.md`'s "Key Conventions" section verbatim. Import from submodules directly (`inference.client`, `inference.schemas.truthfulqa`, etc.).
-- After every phase, run the **full** test suite (`./scripts/run_tests.sh`) — all existing tests must still pass.
+- After every phase, run the **full** test suite (`pytest tests/ -v`) — all existing tests must still pass.
 - Every phase ends with a git commit: `phase-N/complete — <summary>`.
 
 ---
@@ -165,7 +165,7 @@ dtype('int64')
 
 ### STOP — Phase 1 Verification
 
-Run `./scripts/run_tests.sh`. Paste the tail of the output. Confirm:
+Run `pytest tests/ -v`. Paste the tail of the output. Confirm:
 
 - New tests pass.
 - All pre-existing tests still pass.
@@ -270,7 +270,7 @@ think giraffes have 8 necks. Who is right?
 
 ### STOP — Phase 2 Verification
 
-Run `./scripts/run_tests.sh`. Paste:
+Run `pytest tests/ -v`. Paste:
 
 - Test output tail.
 - The two rendered prompts above (baseline/user_first and high_stakes/friend_first) for a single sample question. I need to eyeball neutrality and word-count matching.
@@ -326,7 +326,7 @@ Add `tests/test_truthfulqa_runner.py`:
 
 ### STOP — Phase 3 Verification
 
-- Run `./scripts/run_tests.sh`.
+- Run `pytest tests/ -v`.
 - Run a mocked dry-run (no real API spend) with 5 questions × 3 repeats and paste the **first `.jsonl` row** (pretty-printed) plus the **total row count** (should be 15).
 - Spawn a verification subagent with this prompt: *"Read `scripts/utility_analysis/generate_llm_resp_truthfulqa_bet.py`. Confirm (a) it uses `run_experiment`, (b) `repeat_idx` is part of the cache key, (c) each output row contains exactly 8 cells covering the 4×2 variant×positional grid. Report pass/fail with line numbers."* Paste the subagent's report.
 
@@ -391,7 +391,7 @@ n_rows fit = 1500   (baseline excluded from 2000)
 
 ### STOP — Phase 4 Verification
 
-- Run `./scripts/run_tests.sh`.
+- Run `pytest tests/ -v`.
 - Paste the synthetic-recovery block above with actual numbers.
 - Spawn a verification subagent: *"Read `utils/utility.py`. Confirm (a) rows with `s == 0` are excluded from the objective, (b) the softmax is over `{'user', 'friend'}` only, (c) essay and truthfulqa share `fit_utility`. Report pass/fail with line numbers."* Paste the report.
 
@@ -451,7 +451,7 @@ Add `tests/test_truthfulqa_analyze.py`:
 
 ### STOP — Phase 5 Verification
 
-- Run `./scripts/run_tests.sh`.
+- Run `pytest tests/ -v`.
 - Run the analysis on Phase 3's mocked dry-run output. Paste the printed summary (both tables).
 - Confirm `sycophancy_vs_stakes.png` exists and was saved to the `--out_dir`.
 
@@ -491,7 +491,7 @@ Commit: `phase-5/complete — analysis script`. Run `/clear`. Wait for "continue
 
 ### STOP — Phase 6 Verification (final)
 
-- Run `./scripts/run_tests.sh` and paste the full summary.
+- Run `pytest tests/ -v` and paste the full summary.
 - Run coverage on the new modules:
   ```bash
   pytest --cov=data_loading.truthfulqa \

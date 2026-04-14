@@ -66,6 +66,9 @@ class InferenceTask:
     max_tokens: int = 1500
     # Optional stop sequences (e.g. Gemini: avoid stopping on single newline with ["\n\n"])
     stop_sequences: Optional[List[str]] = None
+    # Extra string mixed into the cache key to differentiate otherwise-identical tasks
+    # (e.g. repeat index for stochastic repeats of the same prompt).
+    repeat_idx: Optional[int] = None
 
     def get_user_prompt(self) -> str:
         """Resolve the user prompt from either direct string or template."""
@@ -87,4 +90,5 @@ class InferenceTask:
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             stop_sequences=self.stop_sequences,
+            repeat_idx=self.repeat_idx,
         )
