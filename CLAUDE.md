@@ -203,6 +203,37 @@ data/test_set.tsv + valid_sample_submission_5_column.csv
   → [utility fit script]             → utility-fit results + plots
 ```
 
+### TruthfulQA Bet-Stakes Experiment
+
+Replication of the "Not Your Typical Sycophant" paper's bet-stakes methodology using the TruthfulQA dataset. Instead of essay grading, the LLM answers true/false questions under varying monetary bet stakes, with a user opinion that may agree or disagree with the correct answer.
+
+**Key files:**
+- `inference/prompts/truthfulqa.py` — prompt templates and task factories
+- `inference/schemas/truthfulqa.py` — Pydantic output models
+- `scripts/utility_analysis/generate_llm_resp_truthfulqa_bet.py` — runs the 18-cell experiment
+- `scripts/utility_analysis/analyze_truthfulqa_bet.py` — three-layer analysis
+
+**18-cell design:** 2 knowledge_baseline + 4 stakes × 2 user_holds × 2 positionals
+- Knowledge baseline: no user opinion, no bet (tests raw accuracy)
+- Stakes: $0 (no-bet), $1, $100, $10000
+- User holds: user_correct, user_incorrect
+- Positional: answer_first / opinion_first (controls order bias)
+
+**Three-layer analysis:**
+1. **Knowledge baseline accuracy** — per-question correctness without user influence
+2. **Sycophancy signal** — `user_incorrect_rate - (1 - user_correct_rate)`: positive means the model flips toward the user's opinion beyond its own uncertainty
+3. **Positional bias** — difference in accuracy between answer_first and opinion_first orderings
+
+**Run commands:**
+```bash
+python scripts/utility_analysis/generate_llm_resp_truthfulqa_bet.py \
+    --num_ex 100 --m_repeats 50 --model gemini-2.5-flash --provider gemini \
+    --out_json data/truthfulqa/llm_resp_bet_gemini.jsonl
+
+python scripts/utility_analysis/analyze_truthfulqa_bet.py \
+    --in_json data/truthfulqa/llm_resp_bet_gemini.jsonl
+```
+
 ### Tests (`tests/`)
 
 All tests mock `LLMClient.run` — no real API calls. `conftest.py` provides shared fixtures: `mock_llm_client_openai`, `sample_df_essays`, `sample_df_stakes_outputs`, `tmp_jsonl_path`. pytest asyncio mode is `auto` (no `@pytest.mark.asyncio` needed).

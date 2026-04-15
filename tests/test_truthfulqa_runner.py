@@ -16,7 +16,7 @@ import pytest
 
 from inference.batch_inference import RunMode, load_latest_records, run_multi_task_inference
 from inference.client import EndpointConfig, LLMClient, stable_key
-from inference.prompts.truthfulqa import POSITIONALS, STAKES_VARIANTS
+from inference.prompts.truthfulqa import KNOWLEDGE_POSITIONS, POSITIONALS, STAKES_VARIANTS, USER_STANCE
 from inference.schemas.truthfulqa import BetAnswerOutput, BetVariantsOutput
 from inference.task import InferenceTask
 from scripts.utility_analysis.generate_llm_resp_truthfulqa_bet import (
@@ -59,8 +59,9 @@ def mock_bet_client() -> LLMClient:
     )
 
     async def fake_run(task: InferenceTask) -> Dict[str, Any]:
+        # Bet tasks return raw text (output_schema=None); knowledge baseline too.
         return {
-            "response_content": {"answer": "friend", "reasoning": "Friend is correct."},
+            "response_content": "Friend",
             "raw_response": {},
         }
 
@@ -105,14 +106,15 @@ def test_expand_with_repeats_all_pairs(sample_questions_df: pd.DataFrame) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_build_task_factories_returns_8_keys() -> None:
-    """Must return 8 keys covering all variant x positional combinations."""
+def test_build_task_factories_returns_18_keys() -> None:
+    """Must return 18 keys: 2 knowledge baseline + 16 bet."""
     factories = build_truthfulqa_task_factories(STAKES_VARIANTS)
-    assert len(factories) == 8
-    expected_keys = {
-        f"{v}_{p}" for v in STAKES_VARIANTS for p in POSITIONALS
+    assert len(factories) == 18
+    expected_bet_keys = {
+        f"{v}_{s}_{p}" for v in STAKES_VARIANTS for s in USER_STANCE for p in POSITIONALS
     }
-    assert set(factories.keys()) == expected_keys
+    expected_kb_keys = {f"knowledge_baseline_correct_{pos}" for pos in KNOWLEDGE_POSITIONS}
+    assert set(factories.keys()) == expected_bet_keys | expected_kb_keys
 
 
 def test_task_factory_sets_repeat_idx() -> None:
@@ -164,12 +166,15 @@ def test_extra_fields_fn_extracts_correct_fields() -> None:
 
 
 def _make_mock_outputs() -> Dict[str, Any]:
-    """Build a dict mimicking run_multi_task_inference's per-key outputs."""
+    """Build a dict mimicking run_multi_task_inference's per-key outputs (raw text)."""
     outputs: Dict[str, Any] = {}
+    for pos in KNOWLEDGE_POSITIONS:
+        outputs[f"knowledge_baseline_correct_{pos}_output"] = "A"
     for variant in STAKES_VARIANTS:
-        for positional in POSITIONALS:
-            key = f"{variant}_{positional}_output"
-            outputs[key] = {"answer": "friend", "reasoning": "Correct."}
+        for stance in USER_STANCE:
+            for positional in POSITIONALS:
+                key = f"{variant}_{stance}_{positional}_output"
+                outputs[key] = "Friend"
     return outputs
 
 
@@ -183,25 +188,26 @@ def _make_mock_base_record() -> Dict[str, Any]:
 
 
 def test_combine_outputs_produces_valid_output() -> None:
-    """combine_outputs must produce a BetVariantsOutput-valid dict with 8 cells."""
-    combine = make_combine_outputs()
+    """combine_outputs must produce a BetVariantsOutput-valid dict with 16 bet + 2 kb cells."""
+    combine = make_combine_outputs(STAKES_VARIANTS)
     result = combine(_make_mock_outputs(), _make_mock_base_record())
     assert "output" in result
     # Validate via Pydantic
     bvo = BetVariantsOutput.model_validate(result["output"])
-    assert len(bvo.cells) == 8
+    assert len(bvo.cells) == 16
+    assert len(bvo.knowledge_baseline_cells) == 2
     assert bvo.question_id == 5
     assert bvo.repeat_idx == 2
 
 
 def test_combine_outputs_covers_all_cells() -> None:
-    """All 8 (variant, positional) pairs must appear in cells."""
-    combine = make_combine_outputs()
+    """All 16 (variant, stance, positional) triples must appear in bet cells."""
+    combine = make_combine_outputs(STAKES_VARIANTS)
     result = combine(_make_mock_outputs(), _make_mock_base_record())
     bvo = BetVariantsOutput.model_validate(result["output"])
-    pairs = {(c.variant, c.positional) for c in bvo.cells}
-    expected = {(v, p) for v in STAKES_VARIANTS for p in POSITIONALS}
-    assert pairs == expected
+    triples = {(c.variant, c.user_stance, c.positional) for c in bvo.cells}
+    expected = {(v, s, p) for v in STAKES_VARIANTS for s in USER_STANCE for p in POSITIONALS}
+    assert triples == expected
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +256,7 @@ async def test_end_to_end_mock(
     mock_bet_client: LLMClient,
     tmp_path: Path,
 ) -> None:
-    """3 questions x 2 repeats -> 6 JSONL rows, each with 8 cells."""
+    """3 questions x 2 repeats -> 6 JSONL rows, each with 16 bet + 2 kb cells."""
     m_repeats = 2
     expanded = expand_with_repeats(sample_questions_df, m_repeats=m_repeats)
     factories = build_truthfulqa_task_factories(STAKES_VARIANTS)
@@ -264,7 +270,7 @@ async def test_end_to_end_mock(
         n=len(expanded),
         mode=RunMode.OVERWRITE,
         extra_fields=extra_fields_fn,
-        combine_outputs=make_combine_outputs(),
+        combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )
 
     latest = load_latest_records(out)
@@ -273,7 +279,7 @@ async def test_end_to_end_mock(
     for rid, record in latest.items():
         assert record["status"] == "ok"
         bvo = BetVariantsOutput.model_validate(record["output"])
-        assert len(bvo.cells) == 8
+        assert len(bvo.cells) == 16
 
 
 async def test_end_to_end_row_keys(
@@ -294,7 +300,7 @@ async def test_end_to_end_row_keys(
         n=len(expanded),
         mode=RunMode.OVERWRITE,
         extra_fields=extra_fields_fn,
-        combine_outputs=make_combine_outputs(),
+        combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )
 
     latest = load_latest_records(out)
@@ -323,7 +329,7 @@ async def test_skip_done_no_op(
     await run_multi_task_inference(
         df=expanded, client=mock_bet_client, task_factories=factories,
         out_json=out, n=len(expanded), mode=RunMode.OVERWRITE,
-        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(),
+        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )
 
     mock_bet_client.run.reset_mock()
@@ -332,7 +338,7 @@ async def test_skip_done_no_op(
     await run_multi_task_inference(
         df=expanded, client=mock_bet_client, task_factories=factories,
         out_json=out, n=len(expanded), mode=RunMode.SKIP_DONE,
-        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(),
+        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )
 
     assert mock_bet_client.run.call_count == 0
@@ -368,7 +374,7 @@ async def test_redo_failed_reruns_errors(
 
     async def fake_run(task: InferenceTask) -> Dict[str, Any]:
         return {
-            "response_content": {"answer": "friend", "reasoning": "ok"},
+            "response_content": "Friend",
             "raw_response": {},
         }
 
@@ -378,11 +384,11 @@ async def test_redo_failed_reruns_errors(
     await run_multi_task_inference(
         df=expanded, client=client, task_factories=factories,
         out_json=out, n=len(expanded), mode=RunMode.REDO_FAILED,
-        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(),
+        extra_fields=extra_fields_fn, combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )
 
-    # Only the one error row should have been re-run (8 tasks per row)
-    assert client.run.call_count == 8
+    # Only the one error row should have been re-run (18 tasks per row)
+    assert client.run.call_count == 18
 
     latest = load_latest_records(out)
     for record in latest.values():

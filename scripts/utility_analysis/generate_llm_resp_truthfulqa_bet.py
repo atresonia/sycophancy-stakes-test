@@ -21,11 +21,21 @@ import pandas as pd
 
 from data_loading.truthfulqa import load_truthfulqa
 from inference.prompts.truthfulqa import (
+    KNOWLEDGE_POSITIONS,
     POSITIONALS,
     STAKES_VARIANTS,
+    USER_STANCE,
     create_bet_task,
+    create_knowledge_baseline_task,
 )
-from inference.schemas.truthfulqa import BetAnswerOutput, BetCellResult, BetVariantsOutput
+from inference.schemas.truthfulqa import (
+    BetAnswerOutput,
+    BetCellResult,
+    BetVariantsOutput,
+    KnowledgeBaselineCellResult,
+    parse_mc_response,
+    parse_one_word_response,
+)
 from inference.task import InferenceTask
 from scripts.utility_analysis.experiment_runner import build_parser, run_experiment
 
@@ -64,7 +74,10 @@ def load_data(args: Any) -> pd.DataFrame:
 def build_truthfulqa_task_factories(
     variants: Dict[str, str],
 ) -> Dict[str, Callable[[pd.Series], InferenceTask]]:
-    """Build 8 task factories keyed as ``{variant}_{positional}``.
+    """Build 18 task factories: 2 knowledge baseline + 16 bet.
+
+    Knowledge baseline keys: ``knowledge_baseline_correct_{A|B}``
+    Bet keys: ``{variant}_{user_stance}_{positional}``
 
     Each factory sets ``repeat_idx`` on the task so that repeated runs of the
     same prompt produce distinct cache entries.
@@ -73,29 +86,54 @@ def build_truthfulqa_task_factories(
         variants: Stakes variant dict (e.g. ``STAKES_VARIANTS``).
 
     Returns:
-        Dict of 8 task factories.
+        Dict of 18 task factories.
     """
     factories: Dict[str, Callable[[pd.Series], InferenceTask]] = {}
+
+    # --- 2 knowledge baseline factories ---
+    for pos in KNOWLEDGE_POSITIONS:
+        key = f"knowledge_baseline_correct_{pos}"
+
+        def kb_factory(
+            row: pd.Series,
+            _pos: str = pos,
+        ) -> InferenceTask:
+            task = create_knowledge_baseline_task(
+                question=row["question"],
+                correct_answer=row["correct_answer"],
+                incorrect_answer=row["incorrect_answer"],
+                correct_position=_pos,
+            )
+            task.repeat_idx = int(row["repeat_idx"])
+            return task
+
+        factories[key] = kb_factory
+
+    # --- 16 bet factories ---
     for variant_name, stakes_block in variants.items():
-        for positional in POSITIONALS:
-            key = f"{variant_name}_{positional}"
+        for stance in USER_STANCE:
+            for positional in POSITIONALS:
+                key = f"{variant_name}_{stance}_{positional}"
 
-            def factory(
-                row: pd.Series,
-                _block: str = stakes_block,
-                _pos: str = positional,
-            ) -> InferenceTask:
-                task = create_bet_task(
-                    question=row["question"],
-                    user_claim=row["incorrect_answer"],
-                    friend_claim=row["correct_answer"],
-                    stakes_block=_block,
-                    positional=_pos,
-                )
-                task.repeat_idx = int(row["repeat_idx"])
-                return task
+                def factory(
+                    row: pd.Series,
+                    _block: str = stakes_block,
+                    _stance: str = stance,
+                    _pos: str = positional,
+                ) -> InferenceTask:
+                    task = create_bet_task(
+                        question=row["question"],
+                        correct_answer=row["correct_answer"],
+                        incorrect_answer=row["incorrect_answer"],
+                        stakes_block=_block,
+                        positional=_pos,
+                        user_stance=_stance,
+                    )
+                    task.output_schema = None  # raw text; parsed via parse_one_word_response
+                    task.repeat_idx = int(row["repeat_idx"])
+                    return task
 
-            factories[key] = factory
+                factories[key] = factory
     return factories
 
 
@@ -116,32 +154,72 @@ def extra_fields_fn(row: pd.Series) -> Dict[str, Any]:
     }
 
 
-def make_combine_outputs() -> Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]:
-    """Create a callback that assembles 8 cell outputs into a ``BetVariantsOutput``.
+def make_combine_outputs(
+    variants: Dict[str, str],
+) -> Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]:
+    """Create a callback that assembles 18 cell outputs into a ``BetVariantsOutput``.
+
+    Parses 2 knowledge baseline keys (raw MC text -> A/B) and 16 bet keys
+    (raw one-word text -> user/friend).
+
+    Args:
+        variants: Stakes variant dict — used to pre-build the key-to-metadata
+            lookup so ``combine`` does a single dict lookup per key instead of
+            suffix-stripping loops.
 
     Returns:
         Callable that receives ``(outputs, base_record)`` and returns a dict
         with an ``"output"`` key containing the validated ``BetVariantsOutput``.
     """
+    # Pre-build key → (variant, stance, positional) lookup for bet keys
+    bet_key_meta: Dict[str, tuple[str, str, str]] = {}
+    for vname in variants:
+        for stance in USER_STANCE:
+            for pos in POSITIONALS:
+                bet_key_meta[f"{vname}_{stance}_{pos}"] = (vname, stance, pos)
 
     def combine(
         outputs: Dict[str, Any],
         base_record: Dict[str, Any],
     ) -> Dict[str, Any]:
         cells: list[BetCellResult] = []
-        for key, resp_dict in outputs.items():
+        kb_cells: list[KnowledgeBaselineCellResult] = []
+
+        for key, raw_response in outputs.items():
             key_name = key.removesuffix("_output")
-            for pos in POSITIONALS:
-                if key_name.endswith(pos):
-                    variant = key_name.removesuffix(f"_{pos}")
-                    cells.append(
-                        BetCellResult(
-                            variant=variant,
-                            positional=pos,
-                            response=BetAnswerOutput(**resp_dict),
-                        )
+            raw_text = raw_response if isinstance(raw_response, str) else str(raw_response)
+
+            # --- Knowledge baseline keys ---
+            if key_name.startswith("knowledge_baseline_correct_"):
+                correct_position = key_name.removeprefix("knowledge_baseline_correct_")
+                answer = parse_mc_response(raw_text)
+                kb_cells.append(
+                    KnowledgeBaselineCellResult(
+                        correct_position=correct_position,
+                        answer=answer,
+                        raw_response=raw_text,
+                        is_correct=answer == correct_position,
                     )
-                    break
+                )
+                continue
+
+            # --- Bet keys ---
+            meta = bet_key_meta.get(key_name)
+            if meta is None:
+                raise ValueError(f"Unrecognized cell key: {key_name!r}")
+            variant, stance, pos = meta
+            parsed_answer = parse_one_word_response(raw_text)
+            cells.append(
+                BetCellResult(
+                    variant=variant,
+                    positional=pos,
+                    user_stance=stance,
+                    response=BetAnswerOutput(
+                        answer=parsed_answer,
+                        raw_response=raw_text,
+                    ),
+                )
+            )
 
         bvo = BetVariantsOutput(
             question_id=base_record["question_id"],
@@ -149,6 +227,7 @@ def make_combine_outputs() -> Callable[[Dict[str, Any], Dict[str, Any]], Dict[st
             incorrect_answer=base_record["incorrect_answer"],
             repeat_idx=base_record["repeat_idx"],
             cells=cells,
+            knowledge_baseline_cells=kb_cells,
         )
         return {"output": bvo.model_dump()}
 
@@ -169,5 +248,5 @@ if __name__ == "__main__":
         load_data=load_data,
         build_task_factories=build_truthfulqa_task_factories,
         extra_fields_fn=extra_fields_fn,
-        combine_outputs=make_combine_outputs(),
+        combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )

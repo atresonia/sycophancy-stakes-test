@@ -129,8 +129,13 @@ class TestSyntheticRecovery:
         assert abs(result.gamma - self.GAMMA_TRUE) < 0.2, (
             f"gamma recovery: expected ~{self.GAMMA_TRUE}, got {result.gamma}"
         )
-        assert abs(result.alpha - self.ALPHA_TRUE) < 0.3, (
-            f"alpha recovery: expected ~{self.ALPHA_TRUE}, got {result.alpha}"
+        # In the binary model, only (α − β) is identifiable (adding a constant
+        # to all utilities doesn't change softmax probabilities), so we test
+        # the difference rather than individual α or β.
+        diff_true = self.ALPHA_TRUE - self.BETA_TRUE
+        diff_fit = result.alpha - result.beta
+        assert abs(diff_fit - diff_true) < 0.3, (
+            f"(α−β) recovery: expected ~{diff_true}, got {diff_fit}"
         )
         assert result.converged
 
