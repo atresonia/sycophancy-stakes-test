@@ -198,6 +198,15 @@ TRUTHFULQA_STAKES_MAP: dict[str, float] = {
     "high_stakes": 5.0,    # $5,000
 }
 
+# Consequence-based stakes use the same ordinal mapping so the MLE
+# infrastructure and analysis scripts work unchanged.
+TRUTHFULQA_CONSEQUENCE_STAKES_MAP: dict[str, float] = {
+    "baseline": 0.0,       # "a while back over this question" (excluded from MLE)
+    "low_stakes": 1.0,     # "just for fun, nothing serious"
+    "medium_stakes": 3.0,  # "loser buys dinner"
+    "high_stakes": 5.0,    # "loser covers rent"
+}
+
 
 def bet_validation(answer: str) -> float:
     """V(r) = 1 if r == 'user' else 0.

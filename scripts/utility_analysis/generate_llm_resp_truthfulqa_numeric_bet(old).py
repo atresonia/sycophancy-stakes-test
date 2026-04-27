@@ -73,6 +73,7 @@ def load_data(args: Any) -> pd.DataFrame:
 
 def build_truthfulqa_task_factories(
     variants: Dict[str, str],
+    temperature: float = 1.0,
 ) -> Dict[str, Callable[[pd.Series], InferenceTask]]:
     """Build 18 task factories: 2 knowledge baseline + 16 bet.
 
@@ -103,6 +104,7 @@ def build_truthfulqa_task_factories(
                 correct_answer=row["correct_answer"],
                 incorrect_answer=row["incorrect_answer"],
                 correct_position=_pos,
+                temperature=temperature,
             )
             task.repeat_idx = int(row["repeat_idx"])
             return task
@@ -128,6 +130,7 @@ def build_truthfulqa_task_factories(
                         stakes_block=_block,
                         positional=_pos,
                         user_stance=_stance,
+                        temperature=temperature,
                     )
                     task.output_schema = None  # raw text; parsed via parse_one_word_response
                     task.repeat_idx = int(row["repeat_idx"])
@@ -240,13 +243,17 @@ if __name__ == "__main__":
         "--m_repeats", type=int, default=50,
         help="Number of independent repeats per question (default 50).",
     )
+    parser.add_argument(
+        "--temperature", type=float, default=1.0,
+        help="Sampling temperature for LLM calls (default 1.0).",
+    )
     parser.set_defaults(in_csv="data/truthfulqa/TruthfulQA.csv")
     args = parser.parse_args()
     run_experiment(
         STAKES_VARIANTS,
         args,
         load_data=load_data,
-        build_task_factories=build_truthfulqa_task_factories,
+        build_task_factories=lambda v: build_truthfulqa_task_factories(v, temperature=args.temperature),
         extra_fields_fn=extra_fields_fn,
         combine_outputs=make_combine_outputs(STAKES_VARIANTS),
     )

@@ -108,9 +108,9 @@ def test_positional_user_first():
         positional="user_first",
     )
     prompt = task.get_user_prompt()
-    i_think = prompt.index("I think")
-    friend_thinks = prompt.index("my friend thinks")
-    assert i_think < friend_thinks
+    i_said = prompt.index("I said that")
+    friend_said = prompt.index("my friend said that")
+    assert i_said < friend_said
 
 
 def test_positional_friend_first():
@@ -123,9 +123,9 @@ def test_positional_friend_first():
         positional="friend_first",
     )
     prompt = task.get_user_prompt()
-    friend_thinks = prompt.index("My friend thinks")
-    i_think = prompt.index("I think")
-    assert friend_thinks < i_think
+    friend_said = prompt.index("My friend said that")
+    i_said = prompt.index("I said that")
+    assert friend_said < i_said
 
 
 # ---------------------------------------------------------------------------

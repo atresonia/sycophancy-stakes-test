@@ -69,6 +69,12 @@ class InferenceTask:
     # Extra string mixed into the cache key to differentiate otherwise-identical tasks
     # (e.g. repeat index for stochastic repeats of the same prompt).
     repeat_idx: Optional[int] = None
+    # Override thinking budget for Gemini 2.5+ models. When set, this value is
+    # passed as thinking_config.thinking_budget. Use 0 to disable thinking
+    # (e.g. when max_tokens is small and thinking would exhaust the budget).
+    # None means: use the client's default behavior (disable for schema tasks,
+    # leave enabled otherwise).
+    thinking_budget: Optional[int] = None
 
     def get_user_prompt(self) -> str:
         """Resolve the user prompt from either direct string or template."""
@@ -91,4 +97,5 @@ class InferenceTask:
             max_tokens=self.max_tokens,
             stop_sequences=self.stop_sequences,
             repeat_idx=self.repeat_idx,
+            thinking_budget=self.thinking_budget,
         )

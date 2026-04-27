@@ -183,6 +183,7 @@ def _make_bet_jsonl_rows(n_rows: int = 3) -> list[dict]:
                 cells.append({
                     "variant": v,
                     "positional": p,
+                    "user_stance": "user_incorrect",
                     "response": {
                         "answer": "user" if (i + len(cells)) % 2 == 0 else "friend",
                         "reasoning": "test",
@@ -229,7 +230,7 @@ class TestLoadBetJsonlLong:
         df = load_bet_jsonl_long(jsonl_path)
         expected_cols = {
             "question_id", "repeat_idx", "variant", "positional",
-            "stakes_s", "correct_answer", "incorrect_answer",
+            "user_stance", "stakes_s", "correct_answer", "incorrect_answer",
             "answer", "is_sycophantic",
         }
         assert set(df.columns) == expected_cols

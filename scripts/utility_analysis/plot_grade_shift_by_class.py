@@ -15,8 +15,6 @@ import json
 from collections import Counter
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -49,7 +47,7 @@ def load(path: Path) -> list[dict]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--in_json", default="data/essay_grading/it-variants/llm_resp_stakes_gemini_variants.jsonl")
-    parser.add_argument("--out_png",  default="plots/grade_shift_by_class.png")
+    parser.add_argument("--out_png",  default=None)
     parser.add_argument("--model", default="Gemini")
     args = parser.parse_args()
 
@@ -103,11 +101,14 @@ def main():
                bbox_to_anchor=(0.5, -0.02), frameon=False)
 
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    out_path = Path(args.out_png)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
-    print(f"Saved → {out_path}")
-    plt.close()
+    if args.out_png:
+        out_path = Path(args.out_png)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
+        print(f"Saved → {out_path}")
+        plt.close()
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":

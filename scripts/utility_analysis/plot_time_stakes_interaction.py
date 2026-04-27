@@ -13,13 +13,17 @@ Usage:
 Grade inflation per essay per cell = cell_grade_num - baseline_grade_num.
 Plot shows mean inflation for each of the four cells:
   (low, short), (low, long), (high, short), (high, long)
+stdout format:
+gemini (n=100)
+                       Short      Long         Δ
+Low stakes             -0.11     -0.11     +0.00
+High stakes            -0.07     -0.18     -0.11
+Δ(High-Low)            +0.04     -0.07
 """
 import argparse
 import sys
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -75,7 +79,7 @@ def print_summary(label: str, inflations: dict[str, list[float]]) -> None:
     print()
 
 
-def plot(model_data: dict[str, dict[str, list[float]]], out_path: Path) -> None:
+def plot(model_data: dict[str, dict[str, list[float]]], out_path: Path | None) -> None:
     n_models = len(model_data)
     fig_width = max(5 * n_models, 5)
     fig, axes = plt.subplots(1, n_models, figsize=(fig_width, 4), sharey=True)
@@ -96,13 +100,23 @@ def plot(model_data: dict[str, dict[str, list[float]]], out_path: Path) -> None:
         panels.append((label, low_means, high_means, n))
         all_means.extend(low_means + high_means)
 
+    # Guard against empty data (all NaN means)
+    finite_means = [v for v in all_means if np.isfinite(v)]
+    if not finite_means:
+        print("ERROR: No valid data found. Check that your JSONL files contain "
+              "time×stakes fields (low_short_output, low_long_output, "
+              "high_short_output, high_long_output).\n"
+              "Regular stakes files (low_stakes_1_output, etc.) are not compatible "
+              "with this script.")
+        sys.exit(1)
+
     pad = 0.3
-    y_min = min(all_means) - pad
-    y_max = max(all_means) + pad
+    y_min = min(finite_means) - pad
+    y_max = max(finite_means) + pad
 
     # Integer ticks spanning the data range
-    tick_min = int(np.floor(min(all_means)))
-    tick_max = int(np.ceil(max(all_means)))
+    tick_min = int(np.floor(min(finite_means)))
+    tick_max = int(np.ceil(max(finite_means)))
     yticks = list(range(tick_min, tick_max + 1))
 
     for ax, (label, low_means, high_means, n) in zip(axes, panels):
@@ -152,10 +166,13 @@ def plot(model_data: dict[str, dict[str, list[float]]], out_path: Path) -> None:
 
     fig.suptitle("Grade Inflation: Time \u00d7 Stakes", fontsize=13, fontweight="bold")
     plt.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
-    print(f"Saved \u2192 {out_path}")
-    plt.close()
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
+        print(f"Saved \u2192 {out_path}")
+        plt.close()
+    else:
+        plt.show()
 
 
 def main():
@@ -165,7 +182,7 @@ def main():
         metavar="LABEL:PATH",
         help="One or more label:path pairs",
     )
-    parser.add_argument("--out_png", default="plots/time_stakes_interaction.png")
+    parser.add_argument("--out_png", default=None)
     args = parser.parse_args()
 
     model_data: dict[str, dict[str, list[float]]] = {}
@@ -180,7 +197,7 @@ def main():
         model_data[label] = inflations
         print_summary(label, inflations)
 
-    plot(model_data, Path(args.out_png))
+    plot(model_data, Path(args.out_png) if args.out_png else None)
 
 
 if __name__ == "__main__":

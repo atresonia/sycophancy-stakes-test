@@ -60,7 +60,7 @@ def resolve_api_key(api_key_env: Optional[str], provider: str) -> str:
 def build_parser(description: str = "Run essay grading experiment") -> argparse.ArgumentParser:
     """Build the standard CLI parser shared by all experiment scripts."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--num_ex", type=int, default=10)
+    parser.add_argument("--num_ex", type=int, default=None)
     parser.add_argument("--model", type=str, default="gpt-5.2")
     parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic", "gemini"], default="openai_compat")
     parser.add_argument("--base_url", type=str, default=None)

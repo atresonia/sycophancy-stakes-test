@@ -258,7 +258,12 @@ class LLMClient:
             # for structured output tasks — constrained JSON generation doesn't benefit from it
             # and thinking can exhaust max_output_tokens before the actual response is emitted.
             # Non-thinking models silently ignore this field.
-            config_dict["thinking_config"] = {"thinking_budget": 0}
+            if task.thinking_budget is None:
+                config_dict["thinking_config"] = {"thinking_budget": 0}
+        # Honor explicit thinking_budget from the task (e.g. 0 to disable thinking
+        # for short-output tasks where thinking would exhaust max_output_tokens).
+        if task.thinking_budget is not None:
+            config_dict["thinking_config"] = {"thinking_budget": task.thinking_budget}
 
         # Use typed config so the SDK serializes generation config correctly (avoids max_output_tokens being ignored)
         if genai_types is not None:
