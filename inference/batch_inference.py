@@ -22,6 +22,7 @@ Usage:
     )
 """
 
+import inspect
 import traceback
 import asyncio
 import orjson
@@ -193,8 +194,12 @@ async def run_multi_task_inference(
     Args:
         task_factories: Dict mapping output key names to task factory functions
                        e.g., {"low_var": make_low_task, "high_var": make_high_task}
-        combine_outputs: Optional. Given the dict of {key_output: value}, return extra
-                         fields to merge into the record (e.g. {"output": combined_dict}).
+        combine_outputs: Optional. Called as ``combine_outputs(outputs, base_record)``
+                         or, if it accepts a third parameter, as
+                         ``combine_outputs(outputs, base_record, prompts)`` where
+                         ``prompts`` is a dict ``{key_output: rendered_user_prompt}``.
+                         Returns extra fields to merge into the record
+                         (e.g. ``{"output": combined_dict}``).
     """
     out_json.parent.mkdir(parents=True, exist_ok=True)
     latest = load_latest_records(out_json)
@@ -228,9 +233,16 @@ async def run_multi_task_inference(
         
         try:
             keys = list(task_factories.keys())
-            resps = await asyncio.gather(*[client.run(factory(row)) for factory in task_factories.values()])
+            tasks_built = [factory(row) for factory in task_factories.values()]
+            prompts = {f"{key}_output": t.get_user_prompt() for key, t in zip(keys, tasks_built)}
+            resps = await asyncio.gather(*[client.run(t) for t in tasks_built])
             outputs = {f"{key}_output": resp["response_content"] for key, resp in zip(keys, resps)}
-            extra = combine_outputs(outputs) if combine_outputs else {}
+            if combine_outputs:
+                n_params = len(inspect.signature(combine_outputs).parameters)
+                extra = (combine_outputs(outputs, base_record, prompts) if n_params >= 3
+                         else combine_outputs(outputs, base_record))
+            else:
+                extra = {}
             return {
                 **base_record,
                 "status": "ok",

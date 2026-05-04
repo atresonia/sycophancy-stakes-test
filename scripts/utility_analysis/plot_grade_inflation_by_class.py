@@ -1,6 +1,6 @@
 """
 Mean grade inflation vs ground truth, with 95% CI, broken down by true grade class.
-Grade inflation = awarded grade − ground truth (positive = more lenient than true grade).
+Grade inflation = awarded grade − baseline LLM grade (positive = more lenient than baseline).
 
 One panel per true grade class (B, C, D). One bar per stakes condition (Low, High).
 Also prints a summary table of mean inflation per condition per class.
@@ -9,14 +9,21 @@ Usage:
     python scripts/utility_analysis/plot_grade_shift_by_class.py \
         --in_json data/essay_grading/it-variants/llm_resp_stakes_gemini_variants.jsonl \
         --out_png  plots/grade_inflation_by_class.png
+
+output format (stdout):
+True Grade  Low Stakes    High Stakes   Average
+------------------------------------------------------
+B           -1.286        -1.457        -1.371
+C           +0.143        +0.041        +0.092
+D           +0.438        +0.312        +0.375
+------------------------------------------------------
+Average     -0.310        -0.440        -0.375
 """
 import argparse
 import json
 from collections import Counter
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -49,7 +56,7 @@ def ci95(values: list[float]) -> float:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--in_json", default="data/essay_grading/it-variants/llm_resp_stakes_gemini_variants.jsonl")
-    parser.add_argument("--out_png", default="plots/grade_inflation_by_class.png")
+    parser.add_argument("--out_png", default=None)
     parser.add_argument("--model", default="gemini")
     args = parser.parse_args()
 
@@ -59,15 +66,16 @@ def main():
     true_grades = [g for g in ["B", "C", "D", "F"]
                    if any(r["ground_truth"] == g for r in records)]
 
-    # Compute inflation (given - ground_truth) per essay per condition
+    # Compute inflation (given - baseline_llm_grade) per essay per condition
     # Using majority vote across the 3 framings → one value per essay per condition
     inflation: dict[str, dict[str, list[float]]] = {g: {} for g in true_grades}
     for label, keys, _ in CONDITIONS:
         for g in true_grades:
-            subset = [r for r in records if r["ground_truth"] == g]
+            subset = [r for r in records if r["ground_truth"] == g
+                      and r.get("baseline_output", {}).get("grade") in GRADE_NUM]
             inflation[g][label] = [
                 GRADE_NUM[majority([r[f"{k}_output"]["grade"] for k in keys])]
-                - GRADE_NUM[g]
+                - GRADE_NUM[r["baseline_output"]["grade"]]
                 for r in subset
             ]
 
@@ -143,15 +151,18 @@ def main():
         ax.yaxis.grid(True, alpha=0.3)
         ax.set_axisbelow(True)
 
-    axes[0].set_ylabel("Mean grade inflation\n(awarded − true grade)", fontsize=10)
+    axes[0].set_ylabel("Mean grade inflation\n(awarded − baseline)", fontsize=10)
     fig.suptitle(f"{args.model} Grade Inflation by Stakes Level and True Grade", fontsize=13, fontweight="bold")
 
     plt.tight_layout()
-    out_path = Path(args.out_png)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
-    print(f"Saved → {out_path}")
-    plt.close()
+    if args.out_png:
+        out_path = Path(args.out_png)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
+        print(f"Saved → {out_path}")
+        plt.close()
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":

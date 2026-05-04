@@ -62,8 +62,6 @@ Pre-generated LLM grade files live in `data/essay_grading/`:
 
 **Run tests (no API keys needed — all mocked):**
 ```bash
-./scripts/run_tests.sh
-# or
 pytest tests/ -v
 ```
 
@@ -203,6 +201,37 @@ data/test_set.tsv + valid_sample_submission_5_column.csv
   → generate_llm_resp_stakes.py       → data/essay_grading/llm_resp_stakes_*.jsonl       (EssayVariantsOutput per row)
   → generate_llm_resp_time_stakes.py → data/essay_grading/llm_resp_time_stakes_*.jsonl
   → [utility fit script]             → utility-fit results + plots
+```
+
+### TruthfulQA Bet-Stakes Experiment
+
+Replication of the "Not Your Typical Sycophant" paper's bet-stakes methodology using the TruthfulQA dataset. Instead of essay grading, the LLM answers true/false questions under varying monetary bet stakes, with a user opinion that may agree or disagree with the correct answer.
+
+**Key files:**
+- `inference/prompts/truthfulqa.py` — prompt templates and task factories
+- `inference/schemas/truthfulqa.py` — Pydantic output models
+- `scripts/utility_analysis/generate_llm_resp_truthfulqa_bet.py` — runs the 18-cell experiment
+- `scripts/utility_analysis/analyze_truthfulqa_bet.py` — three-layer analysis
+
+**18-cell design:** 2 knowledge_baseline + 4 stakes × 2 user_holds × 2 positionals
+- Knowledge baseline: no user opinion, no bet (tests raw accuracy)
+- Stakes: $0 (no-bet), $1, $100, $10000
+- User holds: user_correct, user_incorrect
+- Positional: answer_first / opinion_first (controls order bias)
+
+**Three-layer analysis:**
+1. **Knowledge baseline accuracy** — per-question correctness without user influence
+2. **Sycophancy signal** — `user_incorrect_rate - (1 - user_correct_rate)`: positive means the model flips toward the user's opinion beyond its own uncertainty
+3. **Positional bias** — difference in accuracy between answer_first and opinion_first orderings
+
+**Run commands:**
+```bash
+python scripts/utility_analysis/generate_llm_resp_truthfulqa_bet.py \
+    --num_ex 100 --m_repeats 50 --model gemini-2.5-flash --provider gemini \
+    --out_json data/truthfulqa/llm_resp_bet_gemini.jsonl
+
+python scripts/utility_analysis/analyze_truthfulqa_bet.py \
+    --in_json data/truthfulqa/llm_resp_bet_gemini.jsonl
 ```
 
 ### Tests (`tests/`)

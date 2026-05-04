@@ -5,13 +5,14 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
 from inference.batch_inference import run_multi_task_inference, RunMode
 from inference.client import EndpointConfig, LLMClient
 from inference.prompts.essay import create_llm_essay_grade_task
+from inference.task import InferenceTask
 from utils.helpers import extract_extra_fields
 
 
@@ -59,7 +60,7 @@ def resolve_api_key(api_key_env: Optional[str], provider: str) -> str:
 def build_parser(description: str = "Run essay grading experiment") -> argparse.ArgumentParser:
     """Build the standard CLI parser shared by all experiment scripts."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--num_ex", type=int, default=10)
+    parser.add_argument("--num_ex", type=int, default=None)
     parser.add_argument("--model", type=str, default="gpt-5.2")
     parser.add_argument("--provider", type=str, choices=["openai_compat", "anthropic", "gemini"], default="openai_compat")
     parser.add_argument("--base_url", type=str, default=None)
@@ -77,20 +78,48 @@ def build_parser(description: str = "Run essay grading experiment") -> argparse.
     return parser
 
 
-def run_experiment(variants: Dict[str, str], args: argparse.Namespace) -> None:
-    """Run an essay grading experiment with the given variant dict and parsed CLI args."""
+def run_experiment(
+    variants: Dict[str, str],
+    args: argparse.Namespace,
+    *,
+    load_data: Callable[[argparse.Namespace], pd.DataFrame] | None = None,
+    build_task_factories: Callable[[Dict[str, str]], Dict[str, Callable[[pd.Series], InferenceTask]]] | None = None,
+    extra_fields_fn: Callable[[pd.Series], Dict[str, Any]] | None = None,
+    combine_outputs: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]] | None = None,
+) -> None:
+    """Run an experiment with the given variant dict and parsed CLI args.
+
+    When the optional callbacks are ``None``, falls back to essay-specific
+    defaults (CSV loading, essay task factories, essay extra fields).
+
+    Args:
+        variants: Mapping of variant name to variant text/config.
+        args: Parsed CLI namespace from ``build_parser``.
+        load_data: Custom data loader. Receives ``args``, returns a DataFrame
+            whose index is used as ``prompt_row_id``.
+        build_task_factories: Custom factory builder. Receives ``variants``,
+            returns ``{name: row -> InferenceTask}`` dict.
+        extra_fields_fn: Custom extra-field extractor per row.
+        combine_outputs: Callback passed to ``run_multi_task_inference`` to
+            reshape per-key outputs into a combined record.
+    """
     force_ids = [int(fid) for fid in args.force_ids.split(",")] if args.force_ids else None
     num_ex = args.num_ex
     api_key = resolve_api_key(api_key_env=args.api_key_env, provider=args.provider)
 
-    print(f"Generating essay variant grades for {args.in_csv} with {num_ex} rows "
+    print(f"Generating variant grades for {args.in_csv} with {num_ex} examples "
           f"using {args.model} in {args.mode.name} mode...", file=sys.stderr)
 
-    df = pd.read_csv(args.in_csv)
-    if num_ex > len(df):
-        print(f"Warning: num_ex ({num_ex}) > rows ({len(df)}). Using {len(df)}.", file=sys.stderr)
+    # --- Data loading ---
+    if load_data is not None:
+        df = load_data(args)
         num_ex = len(df)
-    df = df.sample(n=num_ex, random_state=1234).set_index("essay_id")
+    else:
+        df = pd.read_csv(args.in_csv)
+        if num_ex > len(df):
+            print(f"Warning: num_ex ({num_ex}) > rows ({len(df)}). Using {len(df)}.", file=sys.stderr)
+            num_ex = len(df)
+        df = df.sample(n=num_ex, random_state=1234).set_index("essay_id")
 
     client = LLMClient(
         endpoint=EndpointConfig(
@@ -103,7 +132,15 @@ def run_experiment(variants: Dict[str, str], args: argparse.Namespace) -> None:
         max_concurrency=args.max_concurrency,
     )
 
-    task_factories = {name: make_task_factory(text) for name, text in variants.items()}
+    # --- Task factories ---
+    if build_task_factories is not None:
+        task_factories = build_task_factories(variants)
+    else:
+        task_factories = {name: make_task_factory(text) for name, text in variants.items()}
+
+    # --- Extra fields ---
+    if extra_fields_fn is None:
+        extra_fields_fn = lambda row: extract_extra_fields(row, col_names=["ground_truth", "llm_response"])
 
     if args.out_json is not None:
         out_path = Path(args.out_json)
@@ -111,7 +148,8 @@ def run_experiment(variants: Dict[str, str], args: argparse.Namespace) -> None:
         asyncio.run(run_multi_task_inference(
             df=df, client=client, task_factories=task_factories,
             out_json=out_path, n=num_ex, mode=args.mode, force_ids=force_ids,
-            extra_fields=lambda row: extract_extra_fields(row, col_names=["ground_truth", "llm_response"]),
+            extra_fields=extra_fields_fn,
+            combine_outputs=combine_outputs,
         ))
     else:
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
@@ -120,7 +158,8 @@ def run_experiment(variants: Dict[str, str], args: argparse.Namespace) -> None:
             asyncio.run(run_multi_task_inference(
                 df=df, client=client, task_factories=task_factories,
                 out_json=tmp_path, n=num_ex, mode=args.mode, force_ids=force_ids,
-                extra_fields=lambda row: extract_extra_fields(row, col_names=["ground_truth", "llm_response"]),
+                extra_fields=extra_fields_fn,
+                combine_outputs=combine_outputs,
             ))
             print(tmp_path.read_text(), end="")
         finally:
