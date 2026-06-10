@@ -1,0 +1,2 @@
+"experiment","model","beta","se","p_one_sided","ci_lo","ci_hi","n","sd_random","degenerate","method"
+"mmlu","gpt-oss-120b",-0.110527914987561,0.0753412163116216,0.0711837840503577,-0.258196698958339,0.0371408689832176,1995,NA,FALSE,"glm_clustered"

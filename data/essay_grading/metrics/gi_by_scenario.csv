@@ -1,0 +1,11 @@
+scenario,n,mean,sd,ci_lo,ci_hi,predicted_dir,observed_dir,pred_matches_obs
+consequence_severity,50,-0.54,0.813,-0.765,-0.315,?,-,NO
+decision_dependent,50,-0.2,0.833,-0.431,0.031,-,-,YES
+deserved_grade,250,-0.436,1.198,-0.585,-0.287,?,-,NO
+emotional_investment,150,-0.267,0.816,-0.397,-0.136,+,-,NO
+explicit_honesty,50,-0.78,0.764,-0.992,-0.568,-,-,YES
+feedback_actionability,250,-0.148,0.895,-0.259,-0.037,-,-,YES
+grade_weight,150,-0.813,0.893,-0.956,-0.67,-,-,YES
+grader_flattery,50,0.1,0.789,-0.119,0.319,+,+,YES
+time_spent,150,-0.18,0.883,-0.321,-0.039,+,-,NO
+user_vulnerability,50,0.04,0.781,-0.177,0.257,+,+,YES
