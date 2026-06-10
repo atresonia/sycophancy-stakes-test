@@ -9,8 +9,14 @@ import pandas as pd
 
 PRICES = {
     "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+    "gemini-3.1-pro-preview": {"input": 1.25, "output": 5.00},
+    "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "claude-sonnet-4.5": {"input": 3.00, "output": 15.00},
+    "us.meta.llama3-1-8b-instruct-v1:0": {"input": 0.22, "output": 0.22}, # https://aws.amazon.com/bedrock/pricing/
+    "mistral.ministral-3-14b-instruct": {"input": 0.15, "output": 0.15},
+    "openai.gpt-oss-20b-1:0": {"input": 0.07, "output": 0.30},
+    "openai.gpt-oss-120b-1:0": {"input": 0.15, "output": 0.60},
 }
 
 @dataclass
@@ -39,8 +45,17 @@ def estimate_run(
     Rough projection
     """
     if model not in PRICES:
-        raise ValueError(f"No price entry for model '{model}'. "
-                         f"Known: {list(PRICES)}")
+        print(f"No price entry for model '{model}'. Known: {list(PRICES)}")
+        return {
+            "n_rows": len(df),
+            "total_calls": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "input_cost": 0,
+            "output_cost": 0,
+            "total_cost": 0,
+            "est_seconds": 0,
+        }
     
     enc = tiktoken.get_encoding("cl100k_base")
 
@@ -59,7 +74,6 @@ def estimate_run(
         row_input_tokens.append(row_total)
         total_input += row_total
         total_calls += len(calls)
-        row_input_tokens.append(row_total)
     
     total_output = total_calls * max_output_tokens
     
@@ -94,11 +108,6 @@ def estimate_run(
     print(f"  Pilot throughput      : {throughput:.1f} calls/sec "
           f"({pilot_calls} calls / {pilot_seconds:.0f}s)")
     print(f"  ESTIMATED WALL TIME   : {est_seconds:.0f}s (~{est_seconds/60:.1f} min)")
-    print("=" * 64)
-    print("  NOTE: prices are May-2026 estimates and drift. Output uses the")
-    print("  max_tokens cap (worst case); real output is smaller. Time assumes")
-    print("  the same concurrency as the timing pilot.")
-    print("=" * 64)
  
     return {
         "n_rows": n_rows, "total_calls": total_calls,
@@ -108,34 +117,99 @@ def estimate_run(
     }
 
 
-
-
-def _essay_build_calls(row):
-    from experiments.essay_grading_analysis.essay_grading_stakes import (
-        LLM_ESSAY_GRADE_SYSTEM_PROMPT, STAKES_VARIANT_PROMPTS, USER_FRAMING_PREFIX,
+def essay_build_calls_scenarios(row: pd.Series, column: str = "essay") -> list[Call]:
+    from experiments.essay_grading_analysis.essay_grading_scenarios import (
+        SCENARIOS,
+        SCENARIOS_PROMPT_TEMPLATE,
+        LEVELS,
     )
-    sysp = LLM_ESSAY_GRADE_SYSTEM_PROMPT
-    essay = str(row["essay"])
-    calls = [Call(sysp, essay)]
-    calls.append(Call(sysp, USER_FRAMING_PREFIX + "\n\n" + essay))
-    for lvl in ("low", "medium", "high"):
-        framing = USER_FRAMING_PREFIX + " " + STAKES_VARIANT_PROMPTS[lvl]
-        calls.append(Call(sysp, framing + "\n\n" + essay))
+
+    calls = []
+    # extract essay from "kb_prompt"
+    essay = row["kb_prompt"].split("\n\n")[0]
+    # 1. recursively find "prompt" in SCENARIOS
+    # note: it is either 
+    # a) directly under the scenario key or 
+    # b) under the keys under the scenario key (one of: low, medium, high, submitted, not_submitted)
+    for scenario in SCENARIOS:
+        if "prompt" in SCENARIOS[scenario]:
+            calls.append(Call(
+                system_prompt=None, 
+                user=SCENARIOS_PROMPT_TEMPLATE.format(essay=essay, scenario_prompt=SCENARIOS[scenario]["prompt"])
+            ))
+        else:
+            for level in LEVELS:
+                if level in SCENARIOS[scenario] and "prompt" in SCENARIOS[scenario][level]:
+                    calls.append(Call(
+                        system_prompt=None, 
+                        user=SCENARIOS_PROMPT_TEMPLATE.format(essay=essay, scenario_prompt=SCENARIOS[scenario][level]["prompt"])
+                    ))
     return calls
- 
- 
-def estimate_essay_run(df, model, pilot_calls, pilot_seconds,
-                       max_concurrency=16, max_output_tokens=32):
-    return estimate_run(df, "essay grading stakes", _essay_build_calls, model,
-                        pilot_calls, pilot_seconds, max_concurrency, max_output_tokens)
- 
- 
-def _mmlu_build_calls(row):
-    from experiments.mmlu_analysis.mmlu_sycophancy_base import (
-        MMLU_BET_SYSTEM_PROMPT, MMLU_BET_USER_TEMPLATE, OPTION_LETTERS,
-        build_conditions,
+
+
+
+def essay_build_calls(row: pd.Series, column: str = "essay") -> list[Call]:
+    from experiments.essay_grading_analysis.essay_grading_stakes import (
+        STAKES_VARIANT_PROMPTS, USER_FRAMING_PREFIX,
     )
-    sysp = MMLU_BET_SYSTEM_PROMPT
+
+    essay = str(row[column])
+    calls = [Call(system_prompt=None, user=essay)]
+    calls.append(Call(system_prompt=None, user=USER_FRAMING_PREFIX + "\n\n" + essay))
+    for level in ["low", "medium", "high"]:
+        user_prompt = USER_FRAMING_PREFIX + " " + STAKES_VARIANT_PROMPTS[level] + "\n\n" + essay
+        calls.append(Call(system_prompt=None, user=user_prompt))
+    return calls
+
+
+def estimate_essay_scenarios_run(
+    df: pd.DataFrame, 
+    model: str, 
+    pilot_calls: int, 
+    pilot_seconds: float, 
+    max_concurrency: int = 16, 
+    max_output_tokens: int = 32,
+    column: str = "essay",
+) -> dict[str, float]:
+
+    return estimate_run(
+        df=df, 
+        experiment_name="essay grading scenarios", 
+        build_calls=lambda row: essay_build_calls_scenarios(row, column), 
+        model=model,
+        pilot_calls=pilot_calls, 
+        pilot_seconds=pilot_seconds, 
+        max_concurrency=max_concurrency, 
+        max_output_tokens=max_output_tokens
+    )
+
+
+def estimate_essay_run(
+    df: pd.DataFrame, 
+    model: str, 
+    pilot_calls: int, 
+    pilot_seconds: float, 
+    max_concurrency: int = 16, 
+    max_output_tokens: int = 32,
+    column: str = "essay",
+) -> dict[str, float]:
+    return estimate_run(
+        df=df, 
+        experiment_name="essay grading stakes", 
+        build_calls=lambda row: essay_build_calls(row, column), 
+        model=model,
+        pilot_calls=pilot_calls, 
+        pilot_seconds=pilot_seconds, 
+        max_concurrency=max_concurrency, 
+        max_output_tokens=max_output_tokens
+    )
+
+
+def mmlu_build_calls(row: pd.Series) -> list[Call]:
+    from experiments.mmlu_analysis.mmlu_sycophancy_base import (
+        MMLU_BET_USER_TEMPLATE, OPTION_LETTERS, build_conditions
+    )
+
     options = row["options"]
     options_block = "\n".join(
         f"({OPTION_LETTERS[i]}) {opt}" for i, opt in enumerate(options)
@@ -145,34 +219,60 @@ def _mmlu_build_calls(row):
     )
     conditions, _ = build_conditions(row)
     calls = []
-    for _name, framing in conditions.items():
-        user = f"{framing}\n\n{question_block}" if framing else question_block
-        calls.append(Call(sysp, user))
+    for _, framing in conditions.items():
+        user_prompt = f"{framing}\n\n{question_block}" if framing else question_block
+        calls.append(Call(system_prompt=None, user=user_prompt))
     return calls
- 
- 
-def estimate_mmlu_run(df, model, pilot_calls, pilot_seconds,
-                      max_concurrency=16, max_output_tokens=32):
-    return estimate_run(df, "mmlu bet", _mmlu_build_calls, model,
-                        pilot_calls, pilot_seconds, max_concurrency, max_output_tokens)
- 
- 
-def _elephant_build_calls(row, run_binary=True):
-    from experiments.elephant_analysis.elephant_base_experiment_flip import STAKE_VARIANTS
+
+
+def estimate_mmlu_run(
+    df: pd.DataFrame, 
+    model: str, 
+    pilot_calls: int, 
+    pilot_seconds: float, 
+    max_concurrency: int = 16, 
+    max_output_tokens: int = 32,
+    column: str = "essay",
+) -> dict[str, float]:
+    return estimate_run(
+        df=df, 
+        experiment_name="mmlu bet", 
+        build_calls=mmlu_build_calls, 
+        model=model, 
+        column=column,
+        pilot_calls=pilot_calls, 
+        pilot_seconds=pilot_seconds, 
+        max_concurrency=max_concurrency, 
+        max_output_tokens=max_output_tokens
+    )
+
+
+def elephant_build_calls(row: pd.Series, run_binary: bool = True) -> list[Call]:
+    from experiments.elephant_analysis.elephant_base_experiment_flip import (
+        STAKE_VARIANTS,
+    )
+
     suffix = "\nOutput only YTA or NTA." if run_binary else ""
-    orig = str(row["original_post"])
-    flip = str(row["flipped_story"])
-    calls = [Call(None, orig + suffix), Call(None, flip + suffix)]
-    for lvl in ("low", "medium", "high"):
-        v = STAKE_VARIANTS[lvl]
-        calls.append(Call(None, orig + "\n\n" + v + suffix))
-        calls.append(Call(None, flip + "\n\n" + v + suffix))
+    original = str(row["original_post"])
+    flipped = str(row["flipped_story"])
+    calls = [Call(system_prompt=None, user=original + suffix), Call(system_prompt=None, user=flipped + suffix)]
+    for level in ["low", "medium", "high"]:
+        original_user_prompt = STAKE_VARIANTS[level] + "\n\n" + original + suffix
+        calls.append(Call(system_prompt=None, user=original_user_prompt))
+        flipped_user_prompt = STAKE_VARIANTS[level] + "\n\n" + flipped + suffix
+        calls.append(Call(system_prompt=None, user=flipped_user_prompt))
     return calls
- 
- 
-def estimate_elephant_run(df, model, pilot_calls, pilot_seconds,
-                          max_concurrency=16, max_output_tokens=32,
-                          run_binary=True):
-    bc = lambda row: _elephant_build_calls(row, run_binary=run_binary)
-    return estimate_run(df, "elephant", bc, model,
-                        pilot_calls, pilot_seconds, max_concurrency, max_output_tokens)
+
+def estimate_elephant_run(
+    df: pd.DataFrame, model: str, pilot_calls: int, 
+    pilot_seconds: float, max_concurrency: int = 16, max_output_tokens: int = 32
+) -> dict[str, float]:
+    return estimate_run(
+        df=df, experiment_name="elephant", 
+        build_calls=elephant_build_calls, 
+        model=model, 
+        pilot_calls=pilot_calls,
+        pilot_seconds=pilot_seconds,
+        max_concurrency=max_concurrency,
+        max_output_tokens=max_output_tokens
+    )

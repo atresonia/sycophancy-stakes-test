@@ -1,0 +1,3 @@
+"experiment","model","beta","se","p_one_sided","ci_lo","ci_hi","n","sd_random","degenerate","method"
+"mmlu","mistral",0.0186699280008149,0.0139000154156901,0.910389720109728,-0.00857410221393767,0.0459139582155674,2000,NA,FALSE,"glm_clustered"
+"elephant","mistral",0.0588471131640121,0.0227309253017998,0.995185245128415,0.0142944995724845,0.10339972675554,1591,NA,FALSE,"glm_clustered"

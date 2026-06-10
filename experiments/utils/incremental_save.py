@@ -38,6 +38,7 @@ async def run_with_resume(
     skipped so the run picks up where it left off. Pass `overwrite=True` to
     delete the existing file and start fresh. Per-row writes are serialized
     through an asyncio lock.
+    process_row returns a list of dicts, so we need to flatten into a single dictionary
     """
     if overwrite and out_path is not None and out_path.exists():
         print(f"Overwriting: removing {out_path}")
@@ -65,7 +66,7 @@ async def run_with_resume(
                 nonlocal header_needed, schema_checked
                 async with write_lock:
                     if not schema_checked and existing_header is not None:
-                        new_cols = list(result.keys())
+                        new_cols = list(result[0].keys())
                         if new_cols != existing_header:
                             raise ValueError(
                                 f"Schema mismatch with existing {out_path}.\n"
@@ -74,7 +75,7 @@ async def run_with_resume(
                                 f"Pass overwrite=True (or --overwrite) to start fresh."
                             )
                         schema_checked = True
-                    pd.DataFrame([result]).to_csv(
+                    pd.DataFrame(result).to_csv(
                         out_path, mode="a", header=header_needed, index=False
                     )
                     header_needed = False
@@ -87,5 +88,5 @@ async def run_with_resume(
     )
     if out_path is not None and out_path.exists():
         return pd.read_csv(out_path)
-    return pd.DataFrame(results)
+    return pd.DataFrame([rec for row_records in results for rec in row_records])
 
