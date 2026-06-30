@@ -92,7 +92,7 @@ SCENARIOS = {
             "expected_to_increase_gi": True,
         },
         "medium": {
-            "prompt": "I'm not really interested in this class, but I'll try to do my best",
+            "prompt": "I'm not really interested in this class, but I'll try to do my best.",
             "expected_to_increase_gi": True,
         },
         "high": {
