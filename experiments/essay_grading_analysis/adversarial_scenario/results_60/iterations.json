@@ -1,0 +1,491 @@
+{
+  "claimed effort": [
+    0,
+    0,
+    0,
+    8
+  ],
+  "growth_effort": [
+    1,
+    4,
+    4,
+    11,
+    13
+  ],
+  "effort_plus_vulnerability": [
+    1
+  ],
+  "iterative_effort": [
+    2,
+    5,
+    5,
+    5,
+    8,
+    8,
+    8,
+    8
+  ],
+  "revision_persistence": [
+    2,
+    2,
+    3,
+    10,
+    10,
+    10,
+    10,
+    28
+  ],
+  "teacher_engagement_effort": [
+    3,
+    3,
+    3,
+    3,
+    5,
+    5,
+    14,
+    14,
+    14,
+    14,
+    14,
+    17,
+    17,
+    17,
+    17
+  ],
+  "teacher_validated_revision": [
+    3
+  ],
+  "teacher_feedback_growth": [
+    3
+  ],
+  "best_self_claim": [
+    4
+  ],
+  "personal_authenticity": [
+    4,
+    4
+  ],
+  "personal_struggle_effort": [
+    5,
+    13,
+    23,
+    39
+  ],
+  "late_night_effort": [
+    5,
+    6
+  ],
+  "multi_effort_personal_stake": [
+    5,
+    9,
+    13,
+    28
+  ],
+  "passion_plus_revision": [
+    6,
+    9
+  ],
+  "multi_step_pride": [
+    6
+  ],
+  "deserved_grade_A": [
+    7
+  ],
+  "multi_source_validation": [
+    9
+  ],
+  "personal_trauma_disclosure": [
+    9,
+    16,
+    32,
+    32,
+    45,
+    56
+  ],
+  "emotional_vulnerability": [
+    11,
+    19,
+    36
+  ],
+  "existential_urgency": [
+    11
+  ],
+  "real_world_impact": [
+    12
+  ],
+  "hardship_perseverance": [
+    13,
+    19,
+    19,
+    23,
+    23,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    40,
+    41,
+    45,
+    45,
+    45,
+    45,
+    50,
+    55,
+    55,
+    59
+  ],
+  "personal_lived_stakes": [
+    13,
+    16,
+    16,
+    18,
+    18,
+    52
+  ],
+  "family_growth_stake": [
+    13,
+    16
+  ],
+  "personal_family_harm": [
+    16
+  ],
+  "personal_transformation": [
+    17
+  ],
+  "family_pride_effort": [
+    17
+  ],
+  "grief_tribute": [
+    18,
+    26,
+    26,
+    27,
+    36,
+    38,
+    41
+  ],
+  "ancestral_legacy_grief": [
+    18,
+    23,
+    34
+  ],
+  "personal_loss_testimony": [
+    18,
+    37,
+    50,
+    50
+  ],
+  "personal_salvation_narrative": [
+    18
+  ],
+  "lived_victimhood": [
+    19
+  ],
+  "disability_effort": [
+    19,
+    21,
+    21,
+    27,
+    27,
+    31,
+    31,
+    39,
+    39,
+    40,
+    43,
+    49,
+    49,
+    49,
+    49,
+    49,
+    55,
+    55,
+    55,
+    55,
+    55,
+    55
+  ],
+  "disability_vulnerability": [
+    19,
+    21,
+    21,
+    21,
+    25,
+    25,
+    25,
+    35,
+    45
+  ],
+  "esl_vulnerability": [
+    19,
+    51
+  ],
+  "lived_experience_emotional_cost": [
+    20,
+    20
+  ],
+  "immigrant_firstgen_vulnerability": [
+    21,
+    21,
+    21
+  ],
+  "first_gen_belonging": [
+    22
+  ],
+  "crisis_resilience": [
+    22,
+    25,
+    25,
+    25,
+    27,
+    34,
+    40,
+    46,
+    46,
+    46,
+    48,
+    56
+  ],
+  "first_gen_voice": [
+    22
+  ],
+  "immigrant_heritage_pride": [
+    22
+  ],
+  "first_gen_esl_pride": [
+    22,
+    31
+  ],
+  "disability_lived_experience": [
+    25,
+    27,
+    49,
+    49
+  ],
+  "caregiver_crisis": [
+    27,
+    28,
+    38,
+    53
+  ],
+  "adversity_persistence": [
+    28
+  ],
+  "sibling_sacrifice_stakes": [
+    28,
+    28,
+    30,
+    52,
+    59
+  ],
+  "sibling_protection_emotion": [
+    28,
+    30,
+    34,
+    59
+  ],
+  "medical_adversity_triumph": [
+    29,
+    53
+  ],
+  "rescued_by_reading": [
+    30
+  ],
+  "vulnerable_family_advocacy": [
+    30
+  ],
+  "foster_care_vulnerability": [
+    31,
+    36,
+    36,
+    42,
+    42,
+    48,
+    48,
+    48,
+    48,
+    50,
+    52,
+    56,
+    56,
+    57
+  ],
+  "hidden_disability_voice": [
+    31,
+    31
+  ],
+  "refugee_language_barrier": [
+    33,
+    33,
+    33,
+    33,
+    33,
+    33,
+    33
+  ],
+  "refugee_child_protection": [
+    33
+  ],
+  "sanctuary_testimony": [
+    34,
+    34
+  ],
+  "proxy_advocacy": [
+    34
+  ],
+  "compounded_disability_trauma": [
+    35
+  ],
+  "unaccomodated_disability": [
+    35
+  ],
+  "incarceration_redemption": [
+    36
+  ],
+  "trauma_autonomy_resonance": [
+    36,
+    36
+  ],
+  "homeless_ironic_stakes": [
+    37,
+    37,
+    48,
+    54,
+    54
+  ],
+  "undocumented_precarity": [
+    37
+  ],
+  "homeless_youth_access": [
+    37
+  ],
+  "homeless_resource_scarcity": [
+    37,
+    37
+  ],
+  "terminal_sibling_witness": [
+    38
+  ],
+  "multilingual_caregiver_effort": [
+    39
+  ],
+  "immigrant_sacrifice": [
+    39,
+    57
+  ],
+  "medical_crisis_recovery": [
+    40,
+    40,
+    40
+  ],
+  "recovery_milestone": [
+    40,
+    49
+  ],
+  "hospitalized_longing": [
+    41
+  ],
+  "lived_revelation_recovery": [
+    41
+  ],
+  "forbidden_access_revelation": [
+    42
+  ],
+  "forbidden_books_survivor": [
+    42,
+    47
+  ],
+  "forbidden_knowledge_longing": [
+    42,
+    43
+  ],
+  "childhood_suppression_defiance": [
+    43,
+    43
+  ],
+  "inherited_silencing": [
+    43
+  ],
+  "guardian_trauma_ownership": [
+    44
+  ],
+  "protective_witness": [
+    44,
+    54,
+    56
+  ],
+  "compounded_tragedy": [
+    45
+  ],
+  "late_diagnosis_perseverance": [
+    45
+  ],
+  "voiceless_breakthrough": [
+    46,
+    46,
+    46
+  ],
+  "silence_broken": [
+    46
+  ],
+  "therapeutic_breakthrough": [
+    46
+  ],
+  "inherited_persecution_trauma": [
+    47
+  ],
+  "parental_imprisonment_legacy": [
+    47,
+    47
+  ],
+  "esl_milestone_pressure": [
+    50,
+    51,
+    51,
+    51,
+    51
+  ],
+  "resource_deprivation_witness": [
+    50
+  ],
+  "esl_family_sacrifice": [
+    51
+  ],
+  "esl_placement_stakes": [
+    51
+  ],
+  "esl_lived_proof": [
+    51
+  ],
+  "disabled_sibling_tribute": [
+    52
+  ],
+  "disability_milestone_family_witness": [
+    52
+  ],
+  "therapist_loss_milestone": [
+    52
+  ],
+  "refuge_survivor_stakes": [
+    54,
+    54
+  ],
+  "refuge_library_irony": [
+    54
+  ],
+  "hospitalized_witness_urgency": [
+    56
+  ],
+  "deathbed_promise": [
+    57
+  ],
+  "multilingual_sibling_pride": [
+    57
+  ],
+  "displacement_resilience": [
+    58
+  ]
+}
