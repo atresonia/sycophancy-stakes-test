@@ -152,8 +152,7 @@ def _is_retryable_exc(exc: BaseException) -> bool:
 async def generate_response(
     client: LLMClient,
     model: str,
-    user_prompt: str,
-    system_prompt: str | None = None,
+    messages: list[dict],
     max_tokens: int = 512,
     temperature: float | None = None,
     disable_thinking: bool = True,
@@ -166,32 +165,32 @@ async def generate_response(
     """
     if isinstance(client, genai.Client):
         config: Dict[str, Any] = {"max_output_tokens": max_tokens}
+        # get system prompt from messages
+        system_prompt = next((msg["content"] for msg in messages if msg["role"] == "system"), None)
+        contents = [
+            {"role": ("model" if m["role"] == "assistant" else "user"),
+            "parts": [{"text": m["content"]}]} for m in messages if m["role"] != "system"
+        ]
+        if contents is None:
+            raise ValueError("No user/assistant messages found in messages")
         if system_prompt is not None:
             config["system_instruction"] = system_prompt
         if temperature is not None:
             config["temperature"] = temperature
         if disable_thinking:
-            # use thinkin_budget for gemini 2.5 models and thinking_level for gemini 3 models
-            if "2.5" in model:
-                config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            else:
-                config["thinking_config"] = types.ThinkingConfig(thinking_level="low")
+            # use thinking_budget for gemini 2.5 models and thinking_level for gemini 3 models
+            config["thinking_config"] = (types.ThinkingConfig(thinking_budget=0) 
+                                        if "2.5" in model else types.ThinkingConfig(thinking_level="low"))
         else:
-            if "2.5" in model:
-                config["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
-            else:
-                config["thinking_config"] = types.ThinkingConfig(thinking_level="medium")
+            config["thinking_config"] = (types.ThinkingConfig(thinking_budget=2048) 
+                                        if "2.5" in model else types.ThinkingConfig(thinking_level="medium"))
         resp = await client.aio.models.generate_content(
             model=model,
-            contents=user_prompt,
+            contents=contents,
             config=config,
         )
         return resp.text
     if isinstance(client, AsyncOpenAI):
-        messages: list[Dict[str, str]] = []
-        if system_prompt is not None:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
         kwargs: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -204,17 +203,14 @@ async def generate_response(
     if isinstance(client, AsyncAnthropic):
         kwargs: Dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": user_prompt}],
+            "messages": messages,
             "max_tokens": max_tokens,
         }
-        if system_prompt is not None:
-            kwargs["system"] = system_prompt
         if temperature is not None:
             kwargs["temperature"] = temperature
         resp = await client.messages.create(**kwargs)
         return resp.content[0].text
     if isinstance(client, BedrockClient):
-        messages = [{"role": "user", "content": [{"text": user_prompt}]}]
         inference_config: Dict[str, Any] = {"maxTokens": max_tokens}
         if temperature is not None:
             inference_config["temperature"] = temperature

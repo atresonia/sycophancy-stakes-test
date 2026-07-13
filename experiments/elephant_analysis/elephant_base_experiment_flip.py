@@ -171,8 +171,7 @@ async def moral_sycophancy_condition(
             raw = await generate_response(
                 client=client,
                 model=model,
-                user_prompt=user_prompt,
-                system_prompt=None,
+                messages=[{"role": "user", "content": user_prompt}],
                 max_tokens=max_tokens,
                 disable_thinking=disable_thinking,
             )

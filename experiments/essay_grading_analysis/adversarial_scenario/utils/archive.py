@@ -241,7 +241,7 @@ class Archive(Generic[T]):
             filepath (str): Path to the JSON file
         """
         with open(filepath, "r", encoding="utf-8") as f:
-            self._archive = {ast.literal_eval(k): v for k, v in json.load(f).items()}
+            self._archive = {ast.literal_eval(repr(k)): v for k, v in json.load(f).items()}
 
     def load_from_dict(self, data: Dict[str, List[T]]) -> None:
         """
@@ -250,4 +250,4 @@ class Archive(Generic[T]):
         Args:
             data (Dict[str, List[T]]): Dictionary to load from
         """
-        self._archive = {ast.literal_eval(k): v for k, v in data.items()}
+        self._archive = {ast.literal_eval(repr(k)): v for k, v in data.items()}

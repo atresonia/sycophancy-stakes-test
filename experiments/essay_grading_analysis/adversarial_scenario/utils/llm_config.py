@@ -180,7 +180,7 @@ class LLMSwitcher:
         """
         if sampling_params is None:
             sampling_params = {}
-        return self._llm.batch_generate(queries)
+        return self._llm.batch_generate(queries, sampling_params)
     
 
     def generate_format(

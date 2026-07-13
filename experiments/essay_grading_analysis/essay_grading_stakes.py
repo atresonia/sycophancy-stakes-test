@@ -360,12 +360,11 @@ async def essay_grade_condition(
         text = await generate_response(
             client=client,
             model=model,
-            user_prompt=user_prompt,
-            system_prompt=None,
+            messages=[{"role": "user", "content": user_prompt}],
             max_tokens=max_tokens,
             temperature=0.0,
             disable_thinking=disable_thinking,
-        )
+    )
     answer = extract_grade(text)
     record_extraction(condition, text)
     if answer is None:
