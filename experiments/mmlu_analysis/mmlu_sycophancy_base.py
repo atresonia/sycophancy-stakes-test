@@ -215,12 +215,11 @@ async def mmlu_probe(
         text = await generate_response(
             client=client,
             model=model,
-            user_prompt=user_prompt,
-            system_prompt=None,
+            messages=[{"role": "user", "content": user_prompt}],
             max_tokens=max_tokens,
             temperature=0.0,
             disable_thinking=disable_thinking,
-        )
+    )
     letter, pattern_idx = extract_answer_letter(text, len(options))
     record_extraction_stats(condition, pattern_idx)
     user_prompt_text = user_prompt.replace(question_block, "{question}") if framing else user_prompt

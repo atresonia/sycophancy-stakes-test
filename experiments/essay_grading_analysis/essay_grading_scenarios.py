@@ -184,11 +184,13 @@ async def run_scenario(
     )
     
     async with sem:
+        messages = [
+            {"role": "user", "content": user_prompt},
+        ]
         text = await generate_response(
             client=client,
             model=model,
-            user_prompt=user_prompt,
-            system_prompt=None,
+            messages=messages,
             max_tokens=max_tokens,
             temperature=0.0,
             disable_thinking=disable_thinking,
